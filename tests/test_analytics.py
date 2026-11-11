@@ -235,3 +235,12 @@ def test_growth_blank_across_fiscal_year_change():
     fd = make_fd({"revenue": [100.0, 110.0, 150.0]}, years=(2023, 2024, 2026))
     g = R.compute_ratios(fd).loc["revenue_growth"]
     assert g.iloc[1] == pytest.approx(0.10) and math.isnan(g.iloc[2])
+
+
+def test_xirr_simple():
+    from datetime import date
+    from equitypilot.analytics.portfolio import xirr, concentration
+    r = xirr([(date(2024, 1, 1), -100.0), (date(2025, 1, 1), 110.0)])
+    assert r == pytest.approx(0.10, abs=2e-3)       # 366 days -> slightly under 10%
+    c = concentration(pd.Series([0.25] * 4))
+    assert c["effective_n"] == pytest.approx(4.0) and c["hhi"] == pytest.approx(0.25)

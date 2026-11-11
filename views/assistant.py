@@ -35,7 +35,7 @@ with st.expander(f"Assistant settings · current engine: {dict(offline='Offline 
             rows.append({"Model": p["label"], "Input $/M tokens": p["in"], "Output $/M tokens": p["out"],
                          "≈ per question (company data only)": f"${c_small:.4f}",
                          "≈ per question (with a document)": f"${c_big:.4f}"})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(rows), hide_index=True, placeholder="—", width="stretch")
         st.caption(P.PRICING_NOTE + " Estimates assume ~6k input tokens (company data) or ~30k (with document excerpts).")
         key_found = P.find_api_key()
         if key_found:
@@ -96,7 +96,7 @@ for m in history:
             st.caption(m["meta"])
         if m.get("sources") is not None and len(m["sources"]):
             with st.expander("Sources used"):
-                st.dataframe(m["sources"], hide_index=True, width="stretch",
+                st.dataframe(m["sources"], hide_index=True, placeholder="—", width="stretch",
                              column_config={"Link": st.column_config.LinkColumn()})
 
 question = st.chat_input("Ask about this company or a finance concept…") or picked
@@ -145,7 +145,7 @@ if question:
         src = ctx.source_list() if ctx else None
         if src is not None and len(src):
             with st.expander("Sources used"):
-                st.dataframe(src, hide_index=True, width="stretch", column_config={"Link": st.column_config.LinkColumn()})
+                st.dataframe(src, hide_index=True, placeholder="—", width="stretch", column_config={"Link": st.column_config.LinkColumn()})
     history.append({"role": "assistant", "content": text, "meta": meta, "sources": src})
     db.log_activity("Asked assistant", f"{sym or '-'}: {question[:60]}")
 

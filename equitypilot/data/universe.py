@@ -5,6 +5,7 @@ It is NOT an index-constituent list (index membership changes; check NSE Indices
 Users can add or remove companies in the Data Manager. Names, sectors and all numbers are
 fetched from the data provider - nothing here is a financial figure.
 """
+import re
 
 # Yahoo Finance symbols for NSE listings use the ".NS" suffix (".BO" for BSE).
 DEFAULT_UNIVERSE: list[str] = [
@@ -17,6 +18,13 @@ DEFAULT_UNIVERSE: list[str] = [
     "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "BRITANNIA.NS", "TATACONSUM.NS", "GRASIM.NS",
     "APOLLOHOSP.NS", "PIDILITIND.NS", "DABUR.NS", "HAVELLS.NS",
 ]
+
+
+VALID = re.compile(r"^[A-Z0-9&^._:-]{1,30}$")
+
+
+def is_valid_symbol(raw: str) -> bool:
+    return bool(VALID.match(raw.strip().upper().replace(" ", "")))
 
 
 def normalise_symbol(raw: str) -> str:

@@ -89,9 +89,9 @@ else:
         "Data": wdf["data_type"].map(lambda t: config.DATA_TYPES[t][0]),
     })
     event = st.dataframe(
-        view, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row",
+        view, hide_index=True, placeholder="—", width="stretch", on_select="rerun", selection_mode="single-row",
         column_config={
-            "Price (₹)": st.column_config.NumberColumn(format="₹%.2f"),
+            "Price (₹)": st.column_config.NumberColumn(format="₹%,.2f"),
             "Day %": st.column_config.NumberColumn(format="%+.2f%%"),
             "Mkt cap (₹ Cr)": st.column_config.NumberColumn(format="%,.0f"),
             "P/E": st.column_config.NumberColumn(format="%.1fx"),
@@ -129,8 +129,8 @@ else:
             st.markdown(f"**{title}**")
             t = frame[["name", "price", "chg"]].rename(columns={"name": "Company", "price": "Price (₹)", "chg": "Change"})
             t["Change"] = t["Change"] * 100
-            st.dataframe(t, hide_index=True, width="stretch", column_config={
-                "Price (₹)": st.column_config.NumberColumn(format="₹%.2f"),
+            st.dataframe(t, hide_index=True, placeholder="—", width="stretch", column_config={
+                "Price (₹)": st.column_config.NumberColumn(format="₹%,.2f"),
                 "Change": st.column_config.NumberColumn(format="%+.2f%%")})
 
     movers(qdf.nlargest(5, "chg"), "Top gainers", h1)
@@ -140,7 +140,7 @@ else:
         sec = qdf.groupby("sector")["chg"].agg(["mean", "count"]).sort_values("mean", ascending=False).reset_index()
         sec.columns = ["Sector", "Avg change", "Companies"]
         sec["Avg change"] = sec["Avg change"] * 100
-        st.dataframe(sec, hide_index=True, width="stretch", column_config={
+        st.dataframe(sec, hide_index=True, placeholder="—", width="stretch", column_config={
             "Avg change": st.column_config.NumberColumn(format="%+.2f%%")})
     ui.source_footer([config.YAHOO_SOURCE + " - delayed quotes"], fetched_at=None,
                      extra=f"Covers only the {len(qdf)} companies loaded in EquityPilot, not the whole market. "
@@ -154,4 +154,4 @@ if act.empty:
 else:
     act["When"] = act["ts"].map(F.ist)
     st.dataframe(act[["When", "action", "detail"]].rename(columns={"action": "Action", "detail": "Detail"}),
-                 hide_index=True, width="stretch")
+                 hide_index=True, placeholder="—", width="stretch")

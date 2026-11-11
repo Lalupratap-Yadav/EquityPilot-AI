@@ -4,6 +4,7 @@ import re
 import streamlit as st
 
 from equitypilot import config, db
+from equitypilot import formatting as F
 from equitypilot.reports.pdf_report import ReportOptions, build_report
 from equitypilot.ui import components as ui
 
@@ -56,7 +57,7 @@ if go:
             pdf = None
     if pdf:
         config.ensure_dirs()
-        fname = f"{sym.replace('.', '_')}_research_{db.utcnow():%Y%m%d_%H%M}.pdf"
+        fname = f"{F.safe_filename(sym)}_research_{db.utcnow():%Y%m%d_%H%M}.pdf"
         (config.REPORT_DIR / fname).write_bytes(pdf)
         st.session_state["last_report"] = (fname, pdf)
         st.success(f"Report ready ({len(pdf) / 1024:,.0f} KB). A copy is saved in data/reports/{fname}.")

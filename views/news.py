@@ -86,7 +86,7 @@ with tab_disc:
         view = pd.DataFrame({"Date": d["date"].map(F.fdate), "Category": d["category"], "Title": d["title"],
                              "Link": d["url"], "Type": d["data_type"].map(lambda t: config.DATA_TYPES.get(t, (t,))[0]),
                              "Source": d["source"]})
-        st.dataframe(view, hide_index=True, width="stretch",
+        st.dataframe(view, hide_index=True, placeholder="—", width="stretch",
                      column_config={"Link": st.column_config.LinkColumn(display_text="open filing")})
     with st.form("add_disc", clear_on_submit=True):
         st.markdown("**Log a disclosure**")
@@ -112,7 +112,7 @@ with tab_docs:
         ui.empty_state("No documents for this company", "Upload annual reports or results PDFs in the Data Manager.")
     else:
         st.dataframe(docs.assign(uploaded=docs["uploaded_at"].map(F.ist))[["filename", "doc_type", "period", "pages", "uploaded", "source_url"]],
-                     hide_index=True, width="stretch", column_config={"source_url": st.column_config.LinkColumn("Source")})
+                     hide_index=True, placeholder="—", width="stretch", column_config={"source_url": st.column_config.LinkColumn("Source")})
     st.page_link("views/data_manager.py", label="Upload or search documents in the Data Manager", icon=":material/upload_file:")
 
 # ------------------------------------------------------------------ links

@@ -52,7 +52,7 @@ if xs:
         ui.formula("Z'' = 6.56·X1 + 3.26·X2 + 6.72·X3 + 1.05·X4")
         st.dataframe(pd.DataFrame({"Component": ["X1 = Working capital / Total assets", "X2 = Retained earnings / Total assets",
                                                  "X3 = EBIT / Total assets", "X4 = Book equity / Total liabilities"],
-                                   "Value": [f"{v:.3f}" for v in xs.values()]}), hide_index=True, width="stretch")
+                                   "Value": [f"{v:.3f}" for v in xs.values()]}), hide_index=True, placeholder="—", width="stretch")
         st.caption(f"Z'' = {z:.2f} → {zone} zone. Not applicable to banks/financials.")
 ui.source_footer(["Calculated by EquityPilot"] + fd.sources, fd.fetched_at, basis=fd.basis,
                  period=f"Latest FY: {F.fiscal_label(fd.periods[-1])}" if not fd.empty else None)

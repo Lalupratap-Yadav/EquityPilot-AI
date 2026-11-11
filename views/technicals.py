@@ -94,7 +94,7 @@ c2.plotly_chart(C.lines(vv, "Rolling 20-day annualised volatility (%)", ysuffix=
 
 st.markdown("##### Indicator readings (latest)")
 rd = T.readings(ind_full)
-st.dataframe(pd.DataFrame(rd).drop(columns="tone"), hide_index=True, width="stretch")
+st.dataframe(pd.DataFrame(rd).drop(columns="tone"), hide_index=True, placeholder="—", width="stretch")
 ui.note("Technical indicators summarise past price behaviour. They are descriptive readings, not buy/sell signals, "
         "and should be considered alongside fundamentals and risk.", "info")
 with st.expander("Indicator formulas", icon=":material/function:"):

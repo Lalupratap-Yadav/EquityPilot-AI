@@ -69,3 +69,12 @@ def test_pdf_extract_and_search():
     assert U.get_document(doc_id)["pages"] == 2
     U.delete_document(doc_id)
     assert U.get_document(doc_id) is None
+
+
+def test_security_helpers():
+    from equitypilot import formatting as F
+    from equitypilot.data.universe import is_valid_symbol
+    assert F.safe_url("javascript:alert(1)") is None
+    assert F.safe_url("https://www.nseindia.com/x") == "https://www.nseindia.com/x"
+    assert F.safe_filename("../../etc/passwd") == "etc_passwd"
+    assert is_valid_symbol("M&M.NS") and is_valid_symbol("NSE:TCS") and not is_valid_symbol("<script>")

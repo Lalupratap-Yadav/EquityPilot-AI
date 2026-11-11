@@ -100,7 +100,7 @@ view = pd.DataFrame({
 for col in view.columns[3:-1]:
     view[col] = pd.to_numeric(view[col], errors="coerce")   # None -> NaN so missing cells render blank
 num = lambda f: st.column_config.NumberColumn(format=f)  # noqa: E731
-event = st.dataframe(view, hide_index=True, width="stretch", height=min(42 + 35 * len(view), 640),
+event = st.dataframe(view, hide_index=True, placeholder="—", width="stretch", height=min(42 + 35 * len(view), 640),
                      on_select="rerun", selection_mode="multi-row", key="scr_table",
                      column_config={"Mkt cap (₹ Cr)": num("%,.0f"), "P/E": num("%.1f"), "P/B": num("%.1f"),
                                     "ROE %": num("%.1f"), "ROCE %": num("%.1f"), "D/E": num("%.2f"),

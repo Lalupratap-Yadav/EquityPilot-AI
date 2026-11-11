@@ -147,7 +147,7 @@ with tab_biz:
                 db.execute(db.insert(db.segments), [{
                     "symbol": sym, "period": period, "segment": r["Segment"].strip(),
                     "revenue": float(r["Revenue (₹ Cr)"]) * config.CRORE, "ebit": None, "basis": basis,
-                    "source": "User-entered from company filing", "source_url": url or None,
+                    "source": "User-entered from company filing", "source_url": F.safe_url(url),
                     "data_type": "user_entered", "fetched_at": db.utcnow()} for _, r in e.iterrows()])
                 db.log_activity("Saved segments", f"{sym} {period}")
                 st.rerun()
@@ -196,7 +196,7 @@ with tab_share:
                 db.execute(db.insert(db.shareholding), [{
                     "symbol": sym, "period": q, "category": r["Category"], "pct": float(r["Holding %"]),
                     "pledged_pct": float(r["Pledged % (promoter only)"]) if pd.notna(r["Pledged % (promoter only)"]) else None,
-                    "source": "User-entered from exchange filing", "source_url": url or None,
+                    "source": "User-entered from exchange filing", "source_url": F.safe_url(url),
                     "data_type": "user_entered", "fetched_at": db.utcnow()} for _, r in e.iterrows()])
                 db.log_activity("Saved shareholding", f"{sym} {q}")
                 st.rerun()
@@ -221,7 +221,7 @@ with tab_peers:
             "Company": rows["name"], "Mkt cap (₹ Cr)": rows["market_cap"] / config.CRORE, "P/E": rows["pe"],
             "P/B": rows["pb"], "ROE %": rows["roe"] * 100, "ROCE %": rows["roce"] * 100,
             "Rev growth %": rows["revenue_growth"] * 100, "Net margin %": rows["net_margin"] * 100})
-        st.dataframe(view, hide_index=True, width="stretch", column_config={
+        st.dataframe(view, hide_index=True, placeholder="—", width="stretch", column_config={
             "Mkt cap (₹ Cr)": st.column_config.NumberColumn(format="%,.0f"),
             **{c: st.column_config.NumberColumn(format="%.1f") for c in ["P/E", "P/B", "ROE %", "ROCE %", "Rev growth %", "Net margin %"]}})
         st.caption("Ratios use each company's latest fiscal year; check that fiscal year-ends are comparable.")

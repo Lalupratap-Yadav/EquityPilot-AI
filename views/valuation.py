@@ -212,16 +212,16 @@ with tabs[2]:
         for n, r in scn.items():
             if isinstance(r, str):
                 st.warning(f"{n}: {r}")
-        c1, c2 = st.columns([3, 2], gap="large")
-        c1.plotly_chart(C.scenario_bars(list(vals), list(vals.values()), price, "Value per share by scenario"),
+        st.plotly_chart(C.scenario_bars(list(vals), list(vals.values()), price, "Value per share by scenario"),
                         width="stretch", config=C.config())
-        with c2:
-            t = pd.DataFrame({n: {"Value / share": F.inr(r.per_share), "vs market": F.pct(r.per_share / price - 1, signed=True) if price else F.MISSING,
-                                  "WACC": F.pct(inputs.wacc + edited.loc[n, "WACC shift"] / 100),
-                                  "TV share of EV": F.pct(r.terminal_share)}
-                              for n, r in scn.items() if isinstance(r, V.DCFResult)})
-            t.index.name = "Scenario"
-            ui.fin_table(t)
+        t = pd.DataFrame({n: {"Value / share": F.inr(r.per_share),
+                              "vs market": F.pct(r.per_share / price - 1, signed=True) if price else F.MISSING,
+                              "WACC": F.pct(inputs.wacc + edited.loc[n, "WACC shift"] / 100),
+                              "Terminal growth": F.pct(inputs.terminal_growth + edited.loc[n, "Terminal growth shift"] / 100),
+                              "TV share of EV": F.pct(r.terminal_share)}
+                          for n, r in scn.items() if isinstance(r, V.DCFResult)}).T
+        t.index.name = "Scenario"
+        ui.fin_table(t)
         st.session_state[f"dcf_scenarios:{sym}"] = vals
 
         st.markdown("##### Sensitivity: value per share (₹) by WACC and terminal growth")
@@ -258,7 +258,7 @@ with tabs[3]:
         pm = pd.DataFrame([company_metrics(p) for p in peers])
         show = pd.DataFrame({"Company": pm["name"], "P/E": pm["pe"], "P/B": pm["pb"], "EV/EBITDA": pm["ev_ebitda"],
                              "ROE %": pm["roe"] * 100, "Data": pm["data_type"].map(lambda t: config.DATA_TYPES[t][0])})
-        st.dataframe(show, hide_index=True, width="stretch",
+        st.dataframe(show, hide_index=True, placeholder="—", width="stretch",
                      column_config={c: st.column_config.NumberColumn(format="%.1f") for c in ["P/E", "P/B", "EV/EBITDA", "ROE %"]})
         rel = V.peer_relative(snap, pm)
         if not rel.empty:
@@ -270,7 +270,7 @@ with tabs[3]:
             })
             if fin:
                 out = out[out["Method"] != names["ev_ebitda"]]
-            st.dataframe(out, hide_index=True, width="stretch")
+            st.dataframe(out, hide_index=True, placeholder="—", width="stretch")
             st.caption("Peer medians exclude negative multiples. Relative valuation assumes peers are fairly valued "
                        "and comparable in growth, risk and accounting basis - check that before relying on it.")
 
@@ -282,7 +282,8 @@ with tabs[4]:
     roe_hist = rt.loc["roe"].dropna().iloc[-3:].mean() if not rt.empty and "roe" in rt.index else None
     bvps = (fd.latest("total_equity") / (snap.get("shares") or fd.latest("shares_outstanding"))) if fd.latest("total_equity") and (snap.get("shares") or fd.latest("shares_outstanding")) else None
     c1, c2, c3 = st.columns(3)
-    roe_in = c1.number_input("Sustainable ROE %", -20.0, 50.0, round((roe_hist or 0.14) * 100, 1), 0.25, key=f"jpb_roe_{sym}",
+    roe_default = float(np.clip((roe_hist if roe_hist is not None and pd.notna(roe_hist) else 0.14) * 100, -50.0, 150.0))
+    roe_in = c1.number_input("Sustainable ROE %", -50.0, 150.0, round(roe_default, 1), 0.25, key=f"jpb_roe_{sym}",
                              help=f"Default: 3-yr average ROE {F.pct(roe_hist)}.") / 100
     ke_in = c2.number_input("Cost of equity %", 5.0, 25.0, 13.5, 0.25, key=f"jpb_ke_{sym}",
                             help="CAPM: Rf + β × ERP (see DCF tab).") / 100

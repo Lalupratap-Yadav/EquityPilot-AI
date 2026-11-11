@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parent.parent
 PAGES = ["views/dashboard.py", "views/company.py", "views/financials.py", "views/valuation.py",
          "views/compare.py", "views/technicals.py", "views/risk.py", "views/screener.py",
          "views/news.py", "views/data_manager.py",
-         "views/assistant.py", "views/report.py"]
+         "views/assistant.py", "views/report.py",
+         "views/portfolio.py", "views/learning.py", "views/guide.py"]
 
 
 def run_page(page: str, symbol: str | None = "SAMPLE-BETA") -> AppTest:
@@ -50,3 +51,29 @@ def test_financials_tables_present():
     at = run_page("views/financials.py", "SAMPLE-BETA")
     html = " ".join(h.proto.body for h in at.get("html"))
     assert "Revenue from operations" in html and "Return on equity" in html
+
+
+def test_portfolio_with_sample_holdings():
+    from equitypilot.data import repository as repo, sample
+    if repo.get_holdings().empty:
+        sample.load_sample_portfolio()
+    at = run_page("views/portfolio.py")
+    assert not at.exception, [e.value for e in at.exception]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert "XIRR" in html and "Effective no. of stocks" in html
+
+
+def test_assistant_answers_suggested_question():
+    at = run_page("views/assistant.py", "SAMPLE-GAMMA")
+    at.chat_input[0].set_value("What are the key risks?").run()
+    assert not at.exception, [e.value for e in at.exception]
+    md = " ".join(m.value for m in at.markdown)
+    assert "Facts from sources" in md and "[S" in md
+
+
+def test_learning_quiz_submission():
+    at = run_page("views/learning.py")
+    for r in at.radio:
+        r.set_value(0)
+    at.button[0].click().run() if at.button else None
+    assert not at.exception

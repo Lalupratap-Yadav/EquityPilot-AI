@@ -7,7 +7,7 @@ from equitypilot.ui import components as ui
 from equitypilot.ui import theme
 
 st.set_page_config(page_title=config.APP_NAME, page_icon="assets/icon.svg", layout="wide",
-                   initial_sidebar_state="expanded",
+                   initial_sidebar_state="auto",
                    menu_items={"About": f"{config.APP_NAME} v{config.APP_VERSION} - {config.APP_TAGLINE}. "
                                         "Educational research tool; not investment advice."})
 theme.inject_css()
@@ -46,13 +46,16 @@ PAGES = {
         page("views/compare.py", "Company Comparison", "compare_arrows"),
         page("views/assistant.py", "AI Research Assistant", "smart_toy"),
         page("views/report.py", "Report Generator", "picture_as_pdf"),
+        page("views/portfolio.py", "Portfolio Analysis", "pie_chart"),
     ],
     "Data & learning": [
         page("views/data_manager.py", "Data Manager", "database"),
+        page("views/learning.py", "Learning Centre", "school"),
+        page("views/guide.py", "How to Use", "help"),
     ],
 }
 
-nav = st.navigation(PAGES)
+nav = st.navigation(PAGES, expanded=True)
 ui.sidebar_company_picker()
 with st.sidebar:
     st.divider()

@@ -113,6 +113,9 @@ def refresh_quote_if_stale(symbol: str) -> tuple[bool, str] | None:
 
 def add_company(raw_symbol: str) -> tuple[bool, str, str]:
     """Add a company by symbol (fetches profile, quote, statements, prices). Returns (ok, msg, symbol)."""
+    from .universe import is_valid_symbol
+    if not is_valid_symbol(raw_symbol):
+        return False, "Symbols may contain only letters, digits and & . - ^ : characters.", raw_symbol
     symbol = normalise_symbol(raw_symbol)
     ok, msg = refresh_company(symbol)
     if not ok:
@@ -283,6 +286,8 @@ def get_disclosures(symbol: str | None = None, limit: int = 200) -> pd.DataFrame
 
 
 def add_disclosure(symbol: str, date, title: str, category: str, url: str | None, publisher: str) -> None:
+    from ..formatting import safe_url
+    url = safe_url(url)
     db.upsert(db.disclosures, [{
         "symbol": symbol, "date": pd.Timestamp(date).to_pydatetime(), "title": title.strip(),
         "category": category, "publisher": publisher or "User entry", "url": url or None,

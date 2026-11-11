@@ -158,3 +158,16 @@ def amount(x: Any, currency: str = "INR", decimals: int = 0) -> str:
         return MISSING
     div, _ = amount_unit(currency)
     return indian_group(float(x) / div, decimals) if (currency or "INR") == "INR" else f"{float(x) / div:,.{decimals}f}"
+
+
+def safe_url(url: Any) -> str | None:
+    """Accept only http(s) links (blocks javascript:/data: URLs in user-entered references)."""
+    if not url or not isinstance(url, str):
+        return None
+    u = url.strip()
+    return u if u.lower().startswith(("http://", "https://")) and " " not in u and len(u) < 2000 else None
+
+
+def safe_filename(text: str) -> str:
+    import re
+    return re.sub(r"[^A-Za-z0-9&_-]+", "_", text).strip("_")[:80] or "file"

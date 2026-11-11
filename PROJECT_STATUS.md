@@ -2,30 +2,24 @@
 
 _Source of truth for what is built and tested. Updated at the end of every phase._
 
-**Last updated:** 11 Nov 2026 · **Current phase:** 4 (Valuation & comparison)
+**Last updated:** 12 Nov 2026 · **Status:** Phases 1–10 complete. Remaining items needing the owner's action are listed in TODO.md.
 
 ## Architecture (fixed – do not restructure)
 
 ```
-app.py                     entry point: page config, theme, st.navigation, global company picker
+app.py                     entry point: page config, theme, st.navigation (17 pages), global company picker
 equitypilot/
-  config.py                paths, constants, data-type labels, freshness rules
-  db.py                    SQLite schema (SQLAlchemy Core) + helpers; every table carries provenance
-  formatting.py            ₹ / crore / % / x formatting, IST timestamps, FY labels
-  data/
-    schema.py              canonical line items (all providers map into these keys)
-    universe.py            default research universe + symbol normalisation
-    yahoo.py               Yahoo Finance provider (yfinance) – third-party, delayed
-    official.py            NSE/BSE/SEBI/RBI/MOSPI deep links (no scraping)
-    sample.py              FICTIONAL sample companies (offline mode + tests)
-    repository.py          single data-access layer used by all pages (cache-first)
-  analytics/
-    ratios.py              ratios, CAGR, TTM, DuPont, Piotroski, data-quality checks
-    valuation.py           multiples, WACC/CAPM, DCF, scenarios, sensitivity, reverse DCF, justified P/B
-    screener.py            per-company metric snapshot, presets, filters
-  ui/ theme.py · components.py · charts.py
-views/                     one file per page
-tests/                     pytest (unit + Streamlit AppTest page smoke tests, offline)
+  config.py · db.py · formatting.py
+  data/      schema · universe · yahoo · official · sample · uploads · repository
+  analytics/ ratios · valuation · screener · technicals · risk · portfolio
+  ai/        context · offline · providers
+  reports/   pdf_report
+  content/   glossary · learning
+  ui/        theme · components · charts
+views/       dashboard company financials valuation technicals risk news screener compare
+             assistant report portfolio data_manager learning guide
+tests/       conftest · test_analytics · test_uploads · test_ai_report · test_pages
+docs/        DEPLOYMENT.md · DEMO_SCRIPT.md · screenshots/ · sample_report_SAMPLE-ALPHA.pdf
 ```
 
 ## Phase progress
@@ -35,24 +29,36 @@ tests/                     pytest (unit + Streamlit AppTest page smoke tests, of
 | 1 | Environment, architecture, DB, design system, navigation | ✅ Done · tested |
 | 2 | Dashboard, company search, company research | ✅ Done · tested |
 | 3 | Financial statements, ratios, historical analysis | ✅ Done · tested |
-| 4 | Valuation, DCF, company comparison | 🔄 In progress |
-| 5 | Screener, technical analysis, risk analysis | ⏳ Pending |
-| 6 | Data manager, uploads (CSV/Excel/PDF), news & disclosures | ⏳ Pending |
-| 7 | AI research assistant, PDF report generator | ⏳ Pending |
-| 8 | Portfolio, learning centre, how-to-use guide | ⏳ Pending |
-| 9 | Full testing, security, UI polish | ⏳ Pending |
-| 10 | README, screenshots, deployment, recruiter demo | ⏳ Pending |
+| 4 | Valuation, DCF, company comparison | ✅ Done · tested |
+| 5 | Screener, technical analysis, risk analysis | ✅ Done · tested |
+| 6 | Data manager, uploads (CSV/Excel/PDF), news & disclosures | ✅ Done · tested |
+| 7 | AI research assistant, PDF report generator | ✅ Done · tested |
+| 8 | Portfolio, learning centre, how-to-use guide | ✅ Done · tested |
+| 9 | Full testing, security checks, UI polish, mobile check | ✅ Done · tested |
+| 10 | README, screenshots, deployment guide, demo script | ✅ Done (GitHub push and cloud deploy need the owner's account – see TODO) |
 
-## Tested features (evidence: `pytest` – 26 passing)
+## Testing evidence (what was actually run)
 
-- Sample data generation and storage; Yahoo fetch verified live for TCS.NS (profile, quote, 4 FY + 5 quarters, 1,236 daily prices, 10 headlines).
-- Ratios (growth, margins, ROE/ROCE/ROA with average balances, leverage, liquidity, efficiency, cash-flow), CAGR, DuPont, balance-sheet consistency check – hand-calculated unit tests.
-- Multiples, WACC, DCF (hand-calculated), WACC≤g guard, reverse DCF, sensitivity monotonicity, justified P/B.
-- Pages render without exceptions for all 4 sample companies: Dashboard, Company Research, Financial Analysis.
-- Visual check via headless Edge screenshots (dashboard shows live NIFTY/SENSEX/VIX).
+- **pytest: 106 tests passing** (offline, temporary DB). These cover:
+  - Hand-calculated ratio, DCF, WACC, reverse-DCF, sensitivity, justified P/B, technical indicator, Altman Z″, XIRR and concentration checks.
+  - Upload parsers (periods, aliases, units, outflow signs, NSE price CSV), PDF extraction and search, and security helpers.
+  - AI grounding (all offline facts traceable to sources; recommendations declined; missing info admitted).
+  - PDF reports for sample companies.
+  - AppTest render of all 17 pages for all 4 sample companies, plus interactions (assistant chat input, portfolio, quiz).
+- **Real-data render check**: every company page rendered for all 44 real companies against the real local DB, with no exceptions. This found and fixed one bug (Nestlé ROE above an input maximum).
+- **Visual checks**: headless-Edge screenshots of every page at 1440px, and a phone check at 390px. PDF reports were rendered to images and inspected.
+- **Live data verified**: Yahoo fetch for 44 NSE companies (profile, quote, 4–5 FY plus quarterly statements, about 5 years of daily prices, news), and live NIFTY/SENSEX/VIX tiles.
+
+## Data-quality issues found in real data and handled
+
+- INFY and HCLTECH statements reported in USD by the provider → currency recorded; multiples and DCF disabled; ratios kept.
+- NESTLEIND fiscal-year change (Dec→Mar) → stub periods dropped; YoY growth blank across non-12-month gaps; averages use closing balances.
+- Banks → EV/EBITDA, D/E, current ratio, Piotroski and FCFF DCF marked not meaningful; justified P/B offered instead.
+- Provider equity figures can differ from filings (e.g. HDFC Bank post-merger) → labelled THIRD-PARTY with a "verify with filings" note; uploads take a separate basis.
 
 ## Known limitations (by design / external)
 
-- NSE blocks automated access (HTTP 403 verified); no official public API → deep links + uploads.
-- Yahoo Finance does not state consolidated vs standalone → labelled "basis not stated".
-- Yahoo typically provides 4–5 fiscal years of statements.
+- NSE blocks automated access (HTTP 403 verified); there is no official public API → deep links plus uploads.
+- Yahoo data is delayed, gives 4–5 fiscal years, and does not state its basis.
+- No OCR for scanned PDFs (detected and reported).
+- The free cloud tier has an ephemeral SQLite database.

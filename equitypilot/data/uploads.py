@@ -12,6 +12,7 @@ from datetime import date
 import pandas as pd
 
 from .. import db
+from ..formatting import safe_url
 from .schema import LINE_ITEMS, label
 
 UNITS = {"₹ crore": 1e7, "₹ lakh": 1e5, "₹ million": 1e6, "₹ (absolute)": 1.0}
@@ -168,7 +169,7 @@ def to_rows(wide: pd.DataFrame, symbol: str, basis: str, period_type: str, unit:
                 v = -abs(v)
             out.append({"symbol": symbol, "statement": LINE_ITEMS[key][0], "period_end": pd.Timestamp(period).date(),
                         "period_type": period_type, "basis": basis, "line_item": key, "value": v * mult,
-                        "currency": "INR", "source": source, "source_url": source_url or None,
+                        "currency": "INR", "source": source, "source_url": safe_url(source_url),
                         "data_type": "official_upload", "fetched_at": now})
     return out
 
@@ -259,7 +260,7 @@ def search_pages(pages: list[dict], query: str, window: int = 220, limit: int = 
 def save_document(symbol: str | None, filename: str, doc_type: str, period: str, source_url: str | None,
                   extracted: dict) -> int:
     res = db.execute(db.insert(db.documents).values(
-        symbol=symbol, filename=filename, doc_type=doc_type, period=period, source_url=source_url or None,
+        symbol=symbol, filename=filename, doc_type=doc_type, period=period, source_url=safe_url(source_url),
         pages=extracted["n_pages"], text=pages_to_text(extracted["pages"]), uploaded_at=db.utcnow()))
     db.log_activity("Uploaded document", f"{filename} ({symbol or 'general'})")
     return int(res.inserted_primary_key[0])

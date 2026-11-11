@@ -26,7 +26,7 @@ with tab_src:
     st.markdown("##### Data sources used by EquityPilot")
     st.dataframe(pd.DataFrame(OFFICIAL_SOURCES).rename(columns={"name": "Source", "url": "Website", "use": "Used for",
                                                                 "access": "How EquityPilot accesses it"}),
-                 hide_index=True, width="stretch", column_config={"Website": st.column_config.LinkColumn()})
+                 hide_index=True, placeholder="—", width="stretch", column_config={"Website": st.column_config.LinkColumn()})
     st.markdown("##### Data labels")
     st.html("<div>" + " ".join(f"{ui.badge(k)} <span style='font-size:.82rem;color:#475569;margin-right:14px'>{ui.esc(v[1])}</span><br>"
                                for k, v in config.DATA_TYPES.items()) + "</div>")
@@ -77,7 +77,7 @@ with tab_src:
                 univ = [s for s in repo.list_companies(universe_only=True)["symbol"] if not s.startswith("SAMPLE-")] or DEFAULT_UNIVERSE
                 bar = st.progress(0.0)
                 res = repo.refresh_universe(univ, progress=lambda p, m: bar.progress(min(p, 1.0), m))
-                st.dataframe(pd.DataFrame(res), hide_index=True, width="stretch")
+                st.dataframe(pd.DataFrame(res), hide_index=True, placeholder="—", width="stretch")
                 st.cache_data.clear()
 
 # ------------------------------------------------------------------ statements upload
@@ -166,7 +166,7 @@ with tab_px:
             st.warning(w)
         if not parsed.empty:
             st.caption(f"{len(parsed)} rows · {F.fdate(parsed['date'].min())} to {F.fdate(parsed['date'].max())}")
-            st.dataframe(parsed.tail(10), hide_index=True, width="stretch")
+            st.dataframe(parsed.tail(10), hide_index=True, placeholder="—", width="stretch")
             if st.button("Save prices", type="primary", disabled=psym is None):
                 n = repo.save_prices(psym, parsed, psrc)
                 db.log_activity("Uploaded prices", f"{psym} · {n} rows")
@@ -208,7 +208,7 @@ with tab_doc:
         ui.empty_state("No documents yet", "Upload a PDF above.")
     else:
         dv = docs.assign(uploaded=docs["uploaded_at"].map(F.ist))[["id", "symbol", "filename", "doc_type", "period", "pages", "uploaded", "source_url"]]
-        st.dataframe(dv, hide_index=True, width="stretch", column_config={"source_url": st.column_config.LinkColumn("Source")})
+        st.dataframe(dv, hide_index=True, placeholder="—", width="stretch", column_config={"source_url": st.column_config.LinkColumn("Source")})
         c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
         pick = c1.selectbox("Open document", docs["id"].tolist(),
                             format_func=lambda i: f"#{i} · {docs.set_index('id').loc[i, 'filename']}", key="doc_pick")

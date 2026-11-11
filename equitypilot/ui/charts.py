@@ -153,6 +153,7 @@ def hbar(labels, values, title: str | None = None, suffix: str = "", fmt: str = 
                            textposition="outside", cliponaxis=False,
                            hovertemplate=f"%{{y}}: %{{x:{fmt}}}{suffix}<extra></extra>"))
     fig = _layout(fig, title, height or max(200, 34 * len(list(labels)) + 60), legend=False)
+    fig.update_layout(margin=dict(l=8, r=56, t=40 if title else 12, b=8))
     fig.update_layout(hovermode="closest")
     fig.update_yaxes(autorange="reversed", gridcolor="rgba(0,0,0,0)")
     fig.update_xaxes(showgrid=True, gridcolor=GRID, ticksuffix=suffix)

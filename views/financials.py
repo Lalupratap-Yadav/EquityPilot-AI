@@ -109,7 +109,7 @@ with tab_ratio:
         ui.fin_table(tbl, negative_red=True)
     with st.expander("Formulas used", icon=":material/function:"):
         st.dataframe(pd.DataFrame([{"Ratio": d.label, "Formula": d.formula, "What it tells you": d.help}
-                                   for d in R.RATIOS.values()]), hide_index=True, width="stretch")
+                                   for d in R.RATIOS.values()]), hide_index=True, placeholder="—", width="stretch")
     if ptype == "annual":
         st.markdown("##### DuPont analysis")
         dp = R.dupont(fd)
@@ -127,7 +127,7 @@ with tab_ratio:
             st.metric("F-score", f"{f_score} / 9", help="8-9 strong, 0-2 weak fundamentals (Piotroski, 2000). "
                                                       "Designed for value stocks; interpret with care for financials.")
             st.dataframe(pd.DataFrame([{"Test": t, "Result": "Pass" if v else ("Fail" if v is False else "n/a")}
-                                       for t, v in tests]), hide_index=True, width="stretch")
+                                       for t, v in tests]), hide_index=True, placeholder="—", width="stretch")
     ui.source_footer(["Calculated by EquityPilot from the statements shown"] + fd.sources, fd.fetched_at, basis=fd.basis)
 
 with tab_trend:
@@ -159,7 +159,7 @@ with tab_trend:
         for key in ("revenue", "ebitda", "net_income", "eps_diluted", "total_equity"):
             cg.append({"Metric": label(key), "3-year CAGR": F.pct(R.cagr(fd.get(key), 3)),
                        f"Full period CAGR ({plabels[0]}-{plabels[-1]})": F.pct(R.cagr(fd.get(key)))})
-        st.dataframe(pd.DataFrame(cg), hide_index=True, width="stretch")
+        st.dataframe(pd.DataFrame(cg), hide_index=True, placeholder="—", width="stretch")
         ui.formula("CAGR = (Ending value / Beginning value)^(1 / years) - 1   (blank if either value ≤ 0)")
 
 with tab_quality:
