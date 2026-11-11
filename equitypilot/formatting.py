@@ -109,9 +109,17 @@ def ist(ts: Any) -> str:
     return (t + pd.Timedelta(hours=5, minutes=30)).strftime("%d %b %Y, %H:%M IST")
 
 
+def is_missing_date(d: Any) -> bool:
+    try:
+        import pandas as pd
+        return bool(pd.isna(d))
+    except (TypeError, ValueError):
+        return False
+
+
 def fiscal_label(d: Any) -> str:
     """Indian fiscal-year label for a period end date: 2025-03-31 -> FY2025."""
-    if d is None:
+    if d is None or (not isinstance(d, str) and is_missing_date(d)):
         return MISSING
     if hasattr(d, "to_pydatetime"):
         d = d.to_pydatetime()

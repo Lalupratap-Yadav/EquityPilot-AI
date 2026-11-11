@@ -39,10 +39,14 @@ PAGES = {
         page("views/valuation.py", "Valuation", "calculate"),
         page("views/technicals.py", "Technical Analysis", "candlestick_chart"),
         page("views/risk.py", "Risk Analysis", "shield"),
+        page("views/news.py", "News & Disclosures", "newspaper"),
     ],
     "Tools": [
         page("views/screener.py", "Stock Screener", "filter_alt"),
         page("views/compare.py", "Company Comparison", "compare_arrows"),
+    ],
+    "Data & learning": [
+        page("views/data_manager.py", "Data Manager", "database"),
     ],
 }
 

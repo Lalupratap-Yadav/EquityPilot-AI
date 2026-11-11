@@ -6,7 +6,8 @@ from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = ["views/dashboard.py", "views/company.py", "views/financials.py", "views/valuation.py",
-         "views/compare.py", "views/technicals.py", "views/risk.py", "views/screener.py"]
+         "views/compare.py", "views/technicals.py", "views/risk.py", "views/screener.py",
+         "views/news.py", "views/data_manager.py"]
 
 
 def run_page(page: str, symbol: str | None = "SAMPLE-BETA") -> AppTest:
