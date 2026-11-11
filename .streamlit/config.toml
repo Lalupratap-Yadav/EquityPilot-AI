@@ -1,0 +1,31 @@
+[server]
+headless = true
+maxUploadSize = 50          # MB - large annual-report PDFs
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#1D4ED8"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6FA"
+textColor = "#1F2937"
+borderColor = "#E3E8F0"
+showWidgetBorder = true
+baseRadius = "6px"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+codeFont = "monospace"
+linkColor = "#1D4ED8"
+
+[theme.sidebar]
+backgroundColor = "#0B1F3A"
+secondaryBackgroundColor = "#13294B"
+textColor = "#E6ECF5"
+borderColor = "#1E3A66"
+primaryColor = "#7FB2FF"
+linkColor = "#9CC3FF"

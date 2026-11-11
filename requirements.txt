@@ -1,0 +1,21 @@
+# Core application
+streamlit>=1.50
+pandas>=2.2
+numpy>=2.0
+plotly>=6.0
+SQLAlchemy>=2.0
+
+# Data sources & documents
+yfinance>=1.0
+pdfplumber>=0.11
+openpyxl>=3.1
+
+# Reports
+reportlab>=4.0
+matplotlib>=3.9
+
+# Optional AI provider (only used if you configure an Anthropic API key - paid, usage-based)
+anthropic>=0.70
+
+# Testing
+pytest>=8.0
