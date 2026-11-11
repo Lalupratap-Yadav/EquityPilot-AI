@@ -87,7 +87,8 @@ def fetch_profile_and_quote(symbol: str) -> tuple[dict, dict]:
     return company, quote
 
 
-def _statement_rows(df: pd.DataFrame, statement: str, period_type: str, symbol: str) -> list[dict]:
+def _statement_rows(df: pd.DataFrame, statement: str, period_type: str, symbol: str,
+                    currency: str = "INR") -> list[dict]:
     rows: list[dict] = []
     if df is None or df.empty:
         return rows
@@ -109,7 +110,7 @@ def _statement_rows(df: pd.DataFrame, statement: str, period_type: str, symbol: 
                 "period_type": period_type,
                 # Yahoo does not state the basis per figure; for Indian listings it generally
                 # shows consolidated numbers, but we do not assert that.
-                "basis": "unspecified", "line_item": key, "value": value, "currency": "INR",
+                "basis": "unspecified", "line_item": key, "value": value, "currency": currency,
                 "source": config.YAHOO_SOURCE, "source_url": source_url(symbol) + "/financials",
                 "data_type": "third_party", "fetched_at": now,
             })
@@ -122,6 +123,8 @@ def fetch_financials(symbol: str, quarterly: bool = False) -> list[dict]:
     ptype = "quarterly" if quarterly else "annual"
     rows: list[dict] = []
     try:
+        # Some Indian companies (e.g. ADR issuers) are reported by the provider in USD.
+        currency = (t.info or {}).get("financialCurrency") or "INR"
         frames = {
             "income": t.quarterly_income_stmt if quarterly else t.income_stmt,
             "balance": t.quarterly_balance_sheet if quarterly else t.balance_sheet,
@@ -130,7 +133,7 @@ def fetch_financials(symbol: str, quarterly: bool = False) -> list[dict]:
     except Exception as exc:
         raise ProviderError(f"Could not fetch financial statements for {symbol}: {exc}") from exc
     for statement, df in frames.items():
-        rows.extend(_statement_rows(df, statement, ptype, symbol))
+        rows.extend(_statement_rows(df, statement, ptype, symbol, currency))
     # Yahoo reports capex as a negative number; FCF is reported directly when available.
     return rows
 

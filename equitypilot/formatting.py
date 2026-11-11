@@ -138,3 +138,15 @@ def by_kind(x: Any, kind: str) -> str:
     if kind == "num":
         return MISSING if is_missing(x) else (f"{float(x):.0f}" if float(x).is_integer() else f"{float(x):,.2f}")
     return MISSING if is_missing(x) else str(x)
+
+
+def amount_unit(currency: str = "INR") -> tuple[float, str]:
+    """(divisor, unit label) for statement tables/charts: INR in crore, other currencies in millions."""
+    return (CRORE, "₹ Cr") if (currency or "INR") == "INR" else (1e6, f"{currency} mn")
+
+
+def amount(x: Any, currency: str = "INR", decimals: int = 0) -> str:
+    if is_missing(x):
+        return MISSING
+    div, _ = amount_unit(currency)
+    return indian_group(float(x) / div, decimals) if (currency or "INR") == "INR" else f"{float(x) / div:,.{decimals}f}"

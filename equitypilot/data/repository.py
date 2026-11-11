@@ -31,6 +31,7 @@ class FinancialData:
     source_urls: list[str] = field(default_factory=list)
     data_types: list[str] = field(default_factory=list)
     fetched_at: datetime | None = None
+    currency: str = "INR"
 
     @property
     def empty(self) -> bool:
@@ -169,8 +170,9 @@ def get_financials(symbol: str, period_type: str = "annual", basis: str | None =
     wide = wide.reindex(columns=sorted(wide.columns))
     order = [k for k in LINE_ITEMS if k in wide.index]
     wide = wide.loc[order]
-    # Drop periods that are almost empty (Yahoo sometimes returns a stub column)
-    keep = [c for c in wide.columns if wide[c].notna().sum() >= 3]
+    # Drop stub periods (Yahoo sometimes returns a near-empty column): need a core item and >= 5 values
+    core = [k for k in ("revenue", "total_assets", "net_income") if k in wide.index]
+    keep = [c for c in wide.columns if wide[c].notna().sum() >= 5 and wide.loc[core, c].notna().any()]
     wide = wide[keep]
     return FinancialData(
         wide=wide, period_type=period_type, basis=basis,
@@ -178,6 +180,7 @@ def get_financials(symbol: str, period_type: str = "annual", basis: str | None =
         source_urls=sorted(df["source_url"].dropna().unique().tolist()),
         data_types=sorted(df["data_type"].dropna().unique().tolist()),
         fetched_at=pd.to_datetime(df["fetched_at"]).max(),
+        currency=str(df["currency"].mode().iloc[0]) if df["currency"].notna().any() else "INR",
     )
 
 

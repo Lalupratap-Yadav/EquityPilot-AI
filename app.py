@@ -36,6 +36,13 @@ PAGES = {
     "Company research": [
         page("views/company.py", "Company Research", "apartment"),
         page("views/financials.py", "Financial Analysis", "table_chart"),
+        page("views/valuation.py", "Valuation", "calculate"),
+        page("views/technicals.py", "Technical Analysis", "candlestick_chart"),
+        page("views/risk.py", "Risk Analysis", "shield"),
+    ],
+    "Tools": [
+        page("views/screener.py", "Stock Screener", "filter_alt"),
+        page("views/compare.py", "Company Comparison", "compare_arrows"),
     ],
 }
 

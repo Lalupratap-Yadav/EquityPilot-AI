@@ -44,7 +44,7 @@ h3 {{ font-size: 1.05rem !important; font-weight: 600 !important; margin-top: .6
 .ep-kpis {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin: .2rem 0 1rem 0; }}
 .ep-kpi {{ border:1px solid var(--ep-border); border-radius:8px; padding:11px 13px; background:#fff; min-width:0; }}
 .ep-kpi .l {{ font-size:.72rem; color:var(--ep-muted); text-transform:uppercase; letter-spacing:.05em;
-             font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+             font-weight:600; line-height:1.25; }}
 .ep-kpi .v {{ font-size:1.25rem; font-weight:650; color:var(--ep-ink); margin-top:3px;
              font-variant-numeric: tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .ep-kpi .d {{ font-size:.78rem; margin-top:2px; font-variant-numeric: tabular-nums; color:var(--ep-muted); }}

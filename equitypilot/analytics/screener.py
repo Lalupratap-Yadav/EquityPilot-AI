@@ -63,7 +63,10 @@ def company_metrics(symbol: str, auto_refresh: bool = False) -> dict:
         row["net_income"] = fd.latest("net_income")
         row["revenue_cagr_3y"] = R.cagr(fd.get("revenue"), 3)
         row["profit_cagr_3y"] = R.cagr(fd.get("net_income"), 3)
-        row["piotroski"] = R.piotroski_f_score(fd)[0]
+        row["piotroski"] = None if row["is_financial"] else R.piotroski_f_score(fd)[0]
+        row["currency"] = fd.currency
+        if fd.currency != "INR":  # never show USD amounts under a rupee label
+            row["revenue"] = row["net_income"] = None
         if row["is_financial"]:
             # EV/EBITDA, current ratio and D/E are not meaningful for lenders (debt is raw material).
             for k in ("ev_ebitda", "current_ratio", "debt_to_equity", "interest_coverage"):

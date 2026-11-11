@@ -90,7 +90,7 @@ def _company_financials(seed: int, base_rev: float, growth: float, margin: float
             "total_assets": total_assets, "current_assets": current_assets, "cash": cash,
             "receivables": receivables, "inventory": inventory, "net_ppe": ppe,
             "total_liabilities": total_liabilities, "current_liabilities": current_liabilities,
-            "total_debt": debt, "total_equity": equity, "shares_outstanding": shares,
+            "total_debt": debt, "total_equity": equity, "retained_earnings": equity * 0.85, "shares_outstanding": shares,
             "cfo": cfo, "capex": -capex, "fcf": cfo - capex, "cfi": -capex * 1.05,
             "cff": -dividends - interest, "dividends_paid": -dividends,
         }

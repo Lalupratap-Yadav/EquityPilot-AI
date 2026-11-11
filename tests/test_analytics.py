@@ -153,3 +153,85 @@ def test_formatting():
     assert F.pct(0.1534) == "15.3%"
     assert F.pct(None) == F.MISSING
     assert F.fiscal_label(pd.Timestamp("2025-03-31")) == "FY2025"
+
+
+# ---------------------------------------------------------------- technicals & risk
+import numpy as np  # noqa: E402
+
+from equitypilot.analytics import technicals as T  # noqa: E402
+from equitypilot.analytics import risk as K  # noqa: E402
+
+
+def test_sma_rsi_macd_basics():
+    c = pd.Series(np.arange(1, 61, dtype=float))
+    assert T.sma(c, 5).iloc[-1] == pytest.approx(58.0)
+    assert T.rsi(c).iloc[-1] == pytest.approx(100.0)          # only gains -> RSI 100
+    down = pd.Series(np.arange(60, 0, -1, dtype=float))
+    assert T.rsi(down).iloc[-1] == pytest.approx(0.0)
+    m = T.macd(c)
+    assert m["MACD"].iloc[-1] > 0                               # rising series -> fast EMA above slow
+
+
+def test_rsi_known_value():
+    # alternating +1/-1 moves -> average gain == average loss -> RSI ~ 50
+    c = pd.Series(100 + np.tile([1.0, -1.0], 50).cumsum())
+    assert T.rsi(c).iloc[-1] == pytest.approx(50, abs=3)
+
+
+def test_drawdown_and_volatility():
+    c = pd.Series([100, 120, 90, 110], dtype=float)
+    assert T.max_drawdown(c) == pytest.approx(90 / 120 - 1)
+    flat = pd.Series([100.0] * 50)
+    assert T.annualised_volatility(flat) == pytest.approx(0.0)
+
+
+def test_beta_of_scaled_series():
+    rng = np.random.default_rng(0)
+    m = pd.Series(100 * np.exp(np.cumsum(rng.normal(0, 0.01, 300))))
+    s = pd.Series(100 * np.exp(np.cumsum(np.log(m).diff().fillna(0) * 1.5)))
+    b, corr, n = T.beta(s, m)
+    assert b == pytest.approx(1.5, abs=0.05) and corr > 0.99 and n == 299
+
+
+def test_risk_flags_for_leveraged_sample():
+    from equitypilot.data import repository as repo
+    comp = repo.get_company("SAMPLE-GAMMA")
+    fd = repo.get_financials("SAMPLE-GAMMA")
+    flags = K.assess(comp, fd, repo.get_prices("SAMPLE-GAMMA"), repo.get_shareholding("SAMPLE-GAMMA"),
+                     repo.get_segments("SAMPLE-GAMMA"))
+    titles = {f["title"]: f for f in flags}
+    assert titles["Debt to equity"]["level"] in ("warning", "serious")      # ~0.9x
+    assert titles["Promoter pledge"]["level"] == "serious"                  # 12% pledge
+    assert titles["Largest revenue segment share"]["level"] == "warning"    # 70%
+    assert K.overall_score(flags) is not None
+
+
+def test_altman_z():
+    fd = make_fd({"total_assets": [1000.0], "current_assets": [400.0], "current_liabilities": [200.0],
+                  "retained_earnings": [300.0], "ebit": [150.0], "total_equity": [500.0], "total_liabilities": [500.0]},
+                 years=(2025,))
+    z, zone, x = K.altman_z_double_prime(fd)
+    assert z == pytest.approx(6.56 * 0.2 + 3.26 * 0.3 + 6.72 * 0.15 + 1.05 * 1.0)
+    assert zone == "safe"
+
+
+def test_screener_filters_exclude_missing():
+    from equitypilot.analytics.screener import apply_filters
+    df = pd.DataFrame({"roe": [0.2, 0.05, None]})
+    assert len(apply_filters(df, {"roe": (0.1, None)})) == 1
+    assert len(apply_filters(df, {"roe": (0.1, None)}, keep_missing=True)) == 2
+
+
+def test_currency_mismatch_disables_multiples():
+    fd = make_fd({"revenue": [100.0, 120.0], "net_income": [10.0, 12.0], "total_equity": [50.0, 60.0]})
+    fd.currency = "USD"
+    snap = V.market_snapshot({"price": 100.0, "market_cap": 1000.0, "currency": "INR"}, fd)
+    assert snap["pe"] is None and snap["currency_mismatch"]
+    inp, notes = V.default_dcf_inputs(fd, {"currency": "INR", "shares_outstanding": 10})
+    assert inp is None and "USD" in notes["error"]
+
+
+def test_growth_blank_across_fiscal_year_change():
+    fd = make_fd({"revenue": [100.0, 110.0, 150.0]}, years=(2023, 2024, 2026))
+    g = R.compute_ratios(fd).loc["revenue_growth"]
+    assert g.iloc[1] == pytest.approx(0.10) and math.isnan(g.iloc[2])

@@ -22,6 +22,17 @@ def market_snapshot(quote: dict | None, fd: FinancialData, fq: FinancialData | N
     mcap = (quote or {}).get("market_cap") or (price * shares if price and shares else None)
     out.update(price=price, shares=shares, market_cap=mcap)
 
+    out["currency_mismatch"] = (not fd.empty and fd.currency != ((quote or {}).get("currency") or "INR"))
+    if out["currency_mismatch"]:
+        out.update({k: None for k in ("net_income", "revenue", "ebitda", "equity", "debt", "cash", "ev", "pe", "pb",
+                                      "ps", "ev_ebitda", "ev_sales", "earnings_yield")})
+        out["dividend_yield"] = ((quote or {}).get("dividend_rate") / price) if price and (quote or {}).get("dividend_rate") else None
+        note = f"Statements in {fd.currency}, price in {(quote or {}).get('currency') or 'INR'} - multiples not computed"
+        out["basis"] = {"earnings": note, "revenue": note, "ebitda": note, "balance_sheet": note}
+        return out
+    if fq is not None and not fq.empty and fq.currency != fd.currency:
+        fq = None
+
     def flow(key):
         if fq is not None and not fq.empty:
             v, lbl = R.ttm(fq, key)
@@ -156,6 +167,9 @@ def default_dcf_inputs(fd: FinancialData, quote: dict | None, wacc_value: float 
     notes: dict[str, str] = {}
     if fd.empty:
         return None, {"error": "No financial statements available."}
+    if fd.currency != ((quote or {}).get("currency") or "INR"):
+        return None, {"error": f"Statements are reported in {fd.currency} but the share price is in INR. "
+                               "Upload INR statements from the annual report (Data Manager) to run a DCF."}
     rev = fd.get("revenue").dropna()
     if rev.empty or rev.iloc[-1] <= 0:
         return None, {"error": "Revenue is missing - a revenue-based DCF cannot be built."}

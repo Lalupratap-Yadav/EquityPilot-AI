@@ -33,6 +33,7 @@ LINE_ITEMS: dict[str, tuple[str, str, list[str]]] = {
     "current_liabilities": ("balance", "Current liabilities", ["Current Liabilities"]),
     "total_debt": ("balance", "Total borrowings", ["Total Debt"]),
     "total_equity": ("balance", "Shareholders' equity", ["Stockholders Equity", "Common Stock Equity"]),
+    "retained_earnings": ("balance", "Retained earnings / reserves", ["Retained Earnings"]),
     "minority_interest": ("balance", "Non-controlling interest", ["Minority Interest"]),
     "shares_outstanding": ("balance", "Shares outstanding", ["Ordinary Shares Number", "Share Issued"]),
     # ---------------- cash flow

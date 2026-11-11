@@ -105,14 +105,32 @@ def _avg(s: pd.Series) -> pd.Series:
     """Average of opening and closing balance; first period falls back to closing balance."""
     s = s.astype(float)
     avg = (s + s.shift(1)) / 2
+    try:  # only average with a balance ~12 months earlier (annual); otherwise use the closing balance
+        d = pd.to_datetime(pd.Series(s.index, index=s.index))
+        months = (d.dt.year - d.shift(1).dt.year) * 12 + (d.dt.month - d.shift(1).dt.month)
+        avg = avg.where(months.between(11, 13) | months.between(2, 4))
+    except (TypeError, ValueError):
+        pass
     return avg.fillna(s)
 
 
 def _yoy(s: pd.Series) -> pd.Series:
+    """Year-on-year growth versus the period ~12 months earlier (works for annual and quarterly data).
+    Missing if no comparable period exists (e.g. fiscal-year change) or the base is <= 0."""
     s = s.astype(float)
-    prev = s.shift(1)
-    # growth from a negative or zero base is not meaningful
-    return (s / prev.where(prev > 0) - 1)
+    out = pd.Series(float("nan"), index=s.index)
+    dates = [pd.Timestamp(d) for d in s.index]
+    for i, d in enumerate(dates):
+        for j in range(i - 1, -1, -1):
+            months = (d.year - dates[j].year) * 12 + d.month - dates[j].month
+            if 11 <= months <= 13:
+                base = s.iloc[j]
+                if pd.notna(base) and base > 0 and pd.notna(s.iloc[i]):
+                    out.iloc[i] = s.iloc[i] / base - 1
+                break
+            if months > 13:
+                break
+    return out
 
 
 def compute_ratios(fd: FinancialData) -> pd.DataFrame:
@@ -269,6 +287,18 @@ def quality_checks(fd: FinancialData) -> list[dict]:
     if partial:
         issues.append({"level": "info", "check": "Gaps in some years",
                        "detail": "Missing for at least one period: " + ", ".join(partial) + "."})
+    if fd.period_type == "annual" and len(fd.periods) > 1:
+        dates = [pd.Timestamp(p) for p in fd.periods]
+        gaps = [(b.year - a.year) * 12 + b.month - a.month for a, b in zip(dates, dates[1:])]
+        if any(g != 12 for g in gaps):
+            issues.append({"level": "warning", "check": "Irregular reporting periods",
+                           "detail": "Fiscal year-ends are not 12 months apart (fiscal-year change or missing years). "
+                                     "Year-on-year growth is left blank where no comparable prior year exists."})
+    if fd.currency != "INR":
+        issues.append({"level": "warning", "check": f"Statements reported in {fd.currency}",
+                       "detail": f"The provider reports this company's statements in {fd.currency} while the share price is "
+                                 "in INR. Ratios are unaffected, but price-based multiples and the DCF are disabled. "
+                                 "Upload INR statements from the annual report to enable them."})
     if len(fd.periods) < 3:
         issues.append({"level": "info", "check": "Short history",
                        "detail": f"Only {len(fd.periods)} period(s) available - growth rates and averages are less reliable."})

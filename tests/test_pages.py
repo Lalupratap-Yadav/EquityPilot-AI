@@ -5,7 +5,8 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).resolve().parent.parent
-PAGES = ["views/dashboard.py", "views/company.py", "views/financials.py"]
+PAGES = ["views/dashboard.py", "views/company.py", "views/financials.py", "views/valuation.py",
+         "views/compare.py", "views/technicals.py", "views/risk.py", "views/screener.py"]
 
 
 def run_page(page: str, symbol: str | None = "SAMPLE-BETA") -> AppTest:
@@ -34,3 +35,16 @@ def test_company_pages_for_each_sample(page, symbol):
 def test_company_page_without_selection_shows_empty_state():
     at = run_page("views/company.py", symbol=None)
     assert not at.exception
+
+
+def test_valuation_dcf_produces_value():
+    at = run_page("views/valuation.py", "SAMPLE-ALPHA")
+    assert not at.exception
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert "Intrinsic value / share" in html and "EV → equity bridge" in html
+
+
+def test_financials_tables_present():
+    at = run_page("views/financials.py", "SAMPLE-BETA")
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert "Revenue from operations" in html and "Return on equity" in html

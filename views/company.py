@@ -71,10 +71,10 @@ with tab_over:
         if fd.empty:
             ui.empty_state("No financial statements", "The provider returned none. Upload statements in the Data Manager.")
         else:
-            chart = pd.DataFrame({"Revenue": fd.get("revenue") / config.CRORE,
-                                  "Net profit": fd.get("net_income") / config.CRORE})
+            div, unit = F.amount_unit(fd.currency)
+            chart = pd.DataFrame({"Revenue": fd.get("revenue") / div, "Net profit": fd.get("net_income") / div})
             chart.index = [F.fiscal_label(p) for p in chart.index]
-            st.plotly_chart(C.grouped_bars(chart, ysuffix=" Cr", height=300), width="stretch", config=C.config())
+            st.plotly_chart(C.grouped_bars(chart, f"In {unit}", height=300), width="stretch", config=C.config())
             ui.source_footer(fd.sources, fd.fetched_at, basis=fd.basis, urls=fd.source_urls)
     with right:
         st.markdown("##### Business description")

@@ -41,6 +41,7 @@ if basis == "unspecified":
     ui.note("Basis not stated by the provider. Yahoo Finance generally shows consolidated figures for Indian "
             "listings, but verify material numbers against the company's filing.", "info")
 
+DIV, UNIT = F.amount_unit(fd.currency)
 rt = R.compute_ratios(fd)
 issues = R.quality_checks(fd)
 tab_st, tab_ratio, tab_trend, tab_quality = st.tabs(
@@ -49,16 +50,16 @@ tab_st, tab_ratio, tab_trend, tab_quality = st.tabs(
 
 def fmt_value(key, v):
     if key in ("eps_basic", "eps_diluted"):
-        return F.inr(v)
+        return F.inr(v) if fd.currency == "INR" else F.num(v)
     if key in NON_MONETARY:
-        return F.MISSING if F.is_missing(v) else f"{v / config.CRORE:,.2f} Cr"
-    return F.crore(v, 0, unit=False)
+        return F.MISSING if F.is_missing(v) else f"{v / config.CRORE:,.2f} Cr"  # share counts in crore
+    return F.amount(v, fd.currency)
 
 
 BOLD = {"revenue", "ebitda", "ebit", "net_income", "total_assets", "total_equity", "cfo", "fcf"}
 
 with tab_st:
-    st.caption("Values in ₹ crore (1 crore = 10 million) unless stated; EPS in ₹; share counts in crore. "
+    st.caption(f"Values in {UNIT} (₹ 1 crore = 10 million) unless stated; EPS in reporting currency; share counts in crore. "
                "Negative values in red. '—' = not reported by the source.")
     export = {}
     for stmt, title in STATEMENTS.items():
@@ -68,7 +69,7 @@ with tab_st:
         st.markdown(f"##### {title}")
         tbl = pd.DataFrame({pl: [fmt_value(k, fd.wide.at[k, p]) for k in keys] for pl, p in zip(plabels, fd.periods)},
                            index=[label(k) for k in keys])
-        tbl.index.name = "₹ Cr"
+        tbl.index.name = UNIT
         ui.fin_table(tbl, bold={label(k) for k in BOLD})
         raw = fd.wide.loc[keys].copy()
         raw.columns = plabels
@@ -130,7 +131,7 @@ with tab_ratio:
     ui.source_footer(["Calculated by EquityPilot from the statements shown"] + fd.sources, fd.fetched_at, basis=fd.basis)
 
 with tab_trend:
-    def series(key, scale=config.CRORE):
+    def series(key, scale=DIV):
         s = fd.get(key) / scale
         s.index = plabels
         return s
@@ -139,7 +140,7 @@ with tab_trend:
     with t1:
         st.plotly_chart(C.grouped_bars(pd.DataFrame({"Revenue": series("revenue"), "EBITDA": series("ebitda"),
                                                      "Net profit": series("net_income")}),
-                                       "Revenue, EBITDA and net profit (₹ Cr)", ysuffix=" Cr"),
+                                       f"Revenue, EBITDA and net profit ({UNIT})", ysuffix=""),
                         width="stretch", config=C.config())
         st.plotly_chart(C.lines(pd.DataFrame({"ROE": rt.loc["roe"].values * 100, "ROCE": rt.loc["roce"].values * 100},
                                              index=plabels), "Return ratios (%)", ysuffix="%"),
@@ -150,7 +151,7 @@ with tab_trend:
                                 "Margins (%)", ysuffix="%"), width="stretch", config=C.config())
         st.plotly_chart(C.grouped_bars(pd.DataFrame({"Cash from operations": series("cfo"),
                                                      "Net profit": series("net_income")}),
-                                       "Cash conversion: CFO vs net profit (₹ Cr)", ysuffix=" Cr"),
+                                       f"Cash conversion: CFO vs net profit ({UNIT})", ysuffix=""),
                         width="stretch", config=C.config())
     if ptype == "annual":
         st.markdown("##### Compound annual growth")
