@@ -44,6 +44,8 @@ PAGES = {
     "Tools": [
         page("views/screener.py", "Stock Screener", "filter_alt"),
         page("views/compare.py", "Company Comparison", "compare_arrows"),
+        page("views/assistant.py", "AI Research Assistant", "smart_toy"),
+        page("views/report.py", "Report Generator", "picture_as_pdf"),
     ],
     "Data & learning": [
         page("views/data_manager.py", "Data Manager", "database"),
