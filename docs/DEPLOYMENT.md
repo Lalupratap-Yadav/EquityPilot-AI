@@ -50,7 +50,26 @@ Then open `http://<your-laptop-ip>:8501`.
 
 **Before an interview:** start the app 10 minutes early, click **Data Manager → Refresh entire universe** so quotes are fresh, and keep a generated PDF report ready as a backup.
 
-## 4. Other hosts
+## 4. Automatic data refresh on your computer
+
+Windows (Task Scheduler) - refresh quotes every weekday at 16:00 IST after market close:
+
+Run this in **Command Prompt** (cmd), replacing `<project-folder>` with the full path of the project:
+
+```bat
+schtasks /Create /TN "EquityPilot refresh" /SC WEEKLY /D MON,TUE,WED,THU,FRI /ST 16:00 /TR "\"<project-folder>\.venv\Scripts\python.exe\" -m equitypilot refresh --quotes-only"
+```
+
+Set "Start in" to the project folder in Task Scheduler's task properties (so the `data` folder is found), or set the
+`EQUITYPILOT_DATA_DIR` environment variable. A full refresh (`python -m equitypilot refresh`) is best run weekly.
+
+macOS/Linux (cron):
+
+```bash
+0 16 * * 1-5 cd /path/to/EquityPilot-AI && .venv/bin/python -m equitypilot refresh --quotes-only
+```
+
+## 5. Other hosts
 
 Any platform that runs a Python web process works (Hugging Face Spaces, Render, Railway, a VM). The start command is:
 

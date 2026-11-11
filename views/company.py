@@ -4,7 +4,9 @@ import streamlit as st
 
 from equitypilot import config, db
 from equitypilot import formatting as F
+from equitypilot.analytics import bank as B
 from equitypilot.analytics import ratios as R
+from equitypilot.analytics import risk as K
 from equitypilot.analytics import valuation as V
 from equitypilot.analytics.screener import company_metrics
 from equitypilot.data import repository as repo
@@ -40,8 +42,12 @@ if not company.get("is_sample") and b2.button("Refresh data", icon=":material/re
     db.log_activity("Refreshed company", sym)
 b3.page_link("views/financials.py", label="Financials →", icon=":material/table_chart:")
 
-tab_over, tab_biz, tab_share, tab_peers, tab_src = st.tabs(
-    ["Overview", "Business & segments", "Shareholding", "Peers", "Official sources"])
+tab_names = ["Overview", "Business & segments", "Shareholding", "Peers", "Official sources"]
+if fin:
+    tab_names.insert(1, "Bank metrics")
+tabs = dict(zip(tab_names, st.tabs(tab_names)))
+tab_over, tab_biz, tab_share, tab_peers, tab_src = (tabs[n] for n in ["Overview", "Business & segments", "Shareholding",
+                                                                     "Peers", "Official sources"])
 
 # ------------------------------------------------------------------ overview
 with tab_over:
@@ -244,3 +250,60 @@ with tab_src:
             st.link_button("Company website / investor relations", company["website"], icon=":material/language:")
         ui.note("Tip: download the latest annual report and results PDF from these pages, then upload them in "
                 "the Data Manager. The AI assistant can then summarise them with page references.", "info")
+
+# ------------------------------------------------------------------ bank metrics (financial companies only)
+if fin:
+    with tabs["Bank metrics"]:
+        st.caption("Banks are analysed on asset quality, capital and funding rather than debt/equity. These figures are "
+                   "published in each bank's quarterly results and investor presentation; enter them below with the source.")
+        bm = repo.get_bank_metrics(sym)
+        w = B.wide(bm)
+        if w.empty:
+            ui.empty_state("No bank metrics yet", "Enter the latest quarter's GNPA, NNPA, CRAR, CASA and NIM from the results "
+                           "press release (NSE/BSE filing or the bank's investor-relations page).")
+        else:
+            t = w.map(lambda v: f"{v:.2f}%" if pd.notna(v) else F.MISSING)
+            t.index = [B.BANK_METRICS[k][0] for k in w.index]
+            t.index.name = "Quarter ended"
+            ui.fin_table(t, negative_red=False)
+            c1, c2 = st.columns(2, gap="large")
+            aq = w.loc[[k for k in ("gnpa", "nnpa") if k in w.index]].T
+            if not aq.empty:
+                aq.columns = [B.BANK_METRICS[k][0].replace(" %", "") for k in aq.columns]
+                c1.plotly_chart(C.lines(aq, "Asset quality (%)", ysuffix="%", height=280), width="stretch", config=C.config())
+            cap = w.loc[[k for k in ("crar", "casa") if k in w.index]].T
+            if not cap.empty:
+                cap.columns = [B.BANK_METRICS[k][0].replace(" %", "") for k in cap.columns]
+                c2.plotly_chart(C.lines(cap, "Capital & funding (%)", ysuffix="%", height=280), width="stretch",
+                                config=C.config())
+            for f in B.assess(bm):
+                st.html(f'<div class="ep-flag"><span class="ic {f["level"]}">{K.LEVEL_LABEL.get(f["level"], "N/A")}</span><div>'
+                        f'<div class="t">{ui.esc(f["title"])}: {ui.esc(f["value"])}</div><div class="x">{ui.esc(f["detail"])}</div>'
+                        f'<div class="x" style="color:#8A8F98">Screening bands: {ui.esc(f["rule"])}</div></div></div>')
+            ui.source_footer(bm["source"].dropna().unique(), pd.to_datetime(bm["fetched_at"]).max(),
+                             urls=bm["source_url"].dropna().unique())
+        with st.expander("Enter / update a quarter", icon=":material/edit:", expanded=w.empty):
+            with st.form("bank_form"):
+                c1, c2 = st.columns(2)
+                q = c1.date_input("Quarter end", value=pd.Timestamp("2025-09-30"), format="DD/MM/YYYY")
+                src = c2.text_input("Source document (e.g. 'Q2 FY26 results press release, p. 3')")
+                url = st.text_input("Source URL")
+                cols = st.columns(4)
+                vals = {}
+                for i, (k, (lbl, help_, _, _)) in enumerate(B.BANK_METRICS.items()):
+                    vals[k] = cols[i % 4].number_input(lbl, min_value=0.0, max_value=100.0, value=None, step=0.01,
+                                                      format="%.2f", help=help_, key=f"bm_{k}")
+                if st.form_submit_button("Save quarter", type="primary"):
+                    if not src.strip():
+                        st.error("Enter the source document so the figures can be verified.")
+                    elif all(v is None for v in vals.values()):
+                        st.error("Enter at least one metric.")
+                    else:
+                        n = repo.save_bank_metrics(sym, pd.Timestamp(q).strftime("%Y-%m-%d"), vals, src.strip(), url)
+                        db.log_activity("Saved bank metrics", f"{sym} {q}: {n} values")
+                        st.rerun()
+            if not w.empty:
+                dq = st.selectbox("Delete a quarter", list(w.columns), index=None, placeholder="Choose a quarter…")
+                if dq and st.button(f"Delete {dq}", icon=":material/delete:"):
+                    repo.delete_bank_metrics(sym, dq)
+                    st.rerun()

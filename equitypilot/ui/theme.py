@@ -97,7 +97,7 @@ table.ep-table tr:hover td {{ background:#F5F8FD; }}
 .ep-flag .ic.warning {{ background:#FFF4D6; color:#7A4F00; }}
 .ep-flag .ic.serious {{ background:#FDEEE6; color:#9A3D12; }}
 .ep-flag .ic.critical {{ background:#FDE8E8; color:#9B1C1C; }}
-.ep-flag .ic.na {{ background:#F4F6FA; color:#475569; }}
+.ep-flag .ic.na, .ep-flag .ic.info {{ background:#F4F6FA; color:#475569; }}
 .ep-flag .t {{ font-weight:600; color:var(--ep-ink); font-size:.9rem; }}
 .ep-flag .x {{ color:#475569; font-size:.84rem; margin-top:2px; }}
 

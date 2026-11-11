@@ -62,11 +62,7 @@ class Answer:
         return "\n\n".join(parts)
 
 
-def money(v, cur: str = "INR") -> str:
-    """₹2,25,458 Cr for INR; 'USD 1,234 mn' for other currencies."""
-    if F.is_missing(v):
-        return F.MISSING
-    return f"₹{F.amount(v, cur)} Cr" if (cur or "INR") == "INR" else f"{cur} {F.amount(v, cur)} mn"
+money = F.money   # ₹2,25,458 Cr for INR; "USD 1,234 mn" otherwise
 
 
 def _series_text(rt: pd.DataFrame, key: str) -> str:
@@ -134,9 +130,18 @@ def _debt(ctx, a: Answer):
     s_rat, s_fin = _sid(ctx, "Financial ratios"), _sid(ctx, "Annual financial")
     if R.is_financial(company):
         a.facts.append(f"{company['name']} is a financial-sector company [{_sid(ctx, 'Sector note')}].")
-        a.interp.append("For lenders, borrowings are raw material; leverage is assessed through capital adequacy (CRAR), "
-                        "asset quality (GNPA/NNPA) and liquidity coverage - figures available in the bank's quarterly disclosures, not in this dataset.")
-        a.limits.append("Capital adequacy and asset-quality ratios are not available from the provider - upload them from filings.")
+        a.interp.append("For lenders, borrowings are raw material; strength is judged by capital adequacy (CRAR), "
+                        "asset quality (GNPA/NNPA, provision coverage) and funding (CASA), not debt/equity.")
+        s_bank = _sid(ctx, "Bank metrics")
+        if s_bank == "—":
+            a.limits.append("Bank metrics (GNPA, NNPA, CRAR, CASA, NIM) are not in the dataset - enter them from the bank's "
+                            "quarterly disclosure on Company Research → Bank metrics.")
+            return
+        a.facts.append(next(b.text for b in ctx.blocks if b.sid == s_bank).replace("\n", "; ") + f" [{s_bank}]")
+        for f in [f for f in ctx.data.get("risk_flags", []) if f["category"] in ("Asset quality", "Capital", "Funding & efficiency")]:
+            if f["level"] in ("good", "warning", "serious", "critical"):
+                a.interp.append(f"{f['title']}: {f['value']} → {K.LEVEL_LABEL[f['level']]} under EquityPilot screening bands "
+                                f"({f['rule']}) [{_sid(ctx, 'Rule-based risk')}]")
         return
     if rt is None or rt.empty:
         a.limits.append("No statements available.")

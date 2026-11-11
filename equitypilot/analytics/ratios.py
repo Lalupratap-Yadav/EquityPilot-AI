@@ -303,3 +303,37 @@ def quality_checks(fd: FinancialData) -> list[dict]:
         issues.append({"level": "info", "check": "Short history",
                        "detail": f"Only {len(fd.periods)} period(s) available - growth rates and averages are less reliable."})
     return issues
+
+
+def _qoq(s: pd.Series) -> pd.Series:
+    """Growth versus the immediately preceding quarter (only when it is ~3 months earlier and positive)."""
+    s = s.astype(float)
+    out = pd.Series(float("nan"), index=s.index)
+    dates = [pd.Timestamp(d) for d in s.index]
+    for i in range(1, len(s)):
+        months = (dates[i].year - dates[i - 1].year) * 12 + dates[i].month - dates[i - 1].month
+        base = s.iloc[i - 1]
+        if 2 <= months <= 4 and pd.notna(base) and base > 0 and pd.notna(s.iloc[i]):
+            out.iloc[i] = s.iloc[i] / base - 1
+    return out
+
+
+def quarterly_summary(fq: FinancialData) -> pd.DataFrame:
+    """One row per quarter: revenue, EBITDA, net profit, EPS, margins, QoQ and YoY growth."""
+    if fq.empty:
+        return pd.DataFrame()
+    g = fq.get
+    rev, ebitda, ni = g("revenue"), g("ebitda"), g("net_income")
+    eps = g("eps_diluted").fillna(_div(ni, g("shares_diluted")))
+    em = _div(ebitda, rev)
+    df = pd.DataFrame({"revenue": rev, "ebitda": ebitda, "net_income": ni, "eps": eps,
+                       "revenue_qoq": _qoq(rev), "revenue_yoy": _yoy(rev), "net_income_qoq": _qoq(ni),
+                       "net_income_yoy": _yoy(ni), "ebitda_margin": em, "net_margin": _div(ni, rev)})
+    # margin in the same quarter a year earlier (for YoY margin change)
+    dates = [pd.Timestamp(d) for d in df.index]
+    ly = []
+    for d in dates:
+        prior = [j for j, x in enumerate(dates) if 11 <= (d.year - x.year) * 12 + d.month - x.month <= 13]
+        ly.append(em.iloc[prior[-1]] if prior else float("nan"))
+    df["ebitda_margin_ly"] = ly
+    return df.replace([np.inf, -np.inf], np.nan)

@@ -244,3 +244,59 @@ def test_xirr_simple():
     assert r == pytest.approx(0.10, abs=2e-3)       # 366 days -> slightly under 10%
     c = concentration(pd.Series([0.25] * 4))
     assert c["effective_n"] == pytest.approx(4.0) and c["hhi"] == pytest.approx(0.25)
+
+
+# ---------------------------------------------------------------- bank metrics, quarterly, exports, CLI
+def test_bank_metric_levels_and_flags():
+    from equitypilot.analytics import bank as B
+    df = pd.DataFrame({"symbol": "X", "period": ["2025-06-30", "2025-09-30"] * 2,
+                       "metric": ["gnpa", "gnpa", "crar", "crar"], "value": [3.0, 4.5, 12.0, 11.0]})
+    flags = {f["title"]: f for f in B.assess(df)}
+    assert flags["Gross NPA"]["level"] == "serious"                 # 4.5% > 4% band
+    assert "deteriorating" in flags["Gross NPA"]["detail"]
+    assert flags["Capital adequacy (CRAR)"]["level"] == "critical"  # below 11.5% RBI floor incl. buffer
+    assert B.latest(df, "gnpa") == pytest.approx(4.5)
+
+
+def test_sample_bank_uses_bank_flags_not_leverage():
+    from equitypilot.data import repository as repo
+    comp, fd = repo.get_company("SAMPLE-EPSILON"), repo.get_financials("SAMPLE-EPSILON")
+    flags = K.assess(comp, fd, None, None, None, repo.get_bank_metrics("SAMPLE-EPSILON"))
+    titles = {f["title"] for f in flags}
+    assert "Gross NPA" in titles and "Debt to equity" not in titles and "Current ratio" not in titles
+
+
+def test_quarterly_summary_growth():
+    cols = [pd.Timestamp(d) for d in ("2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31")]
+    wide = pd.DataFrame({"revenue": [100.0, 110.0, 120.0, 125.0, 130.0], "net_income": [10.0, 11.0, 12.0, 12.5, 13.0],
+                         "ebitda": [20.0, 22.0, 24.0, 25.0, 27.0]}, index=cols).T
+    fq = FinancialData(wide=wide, period_type="quarterly", basis="consolidated")
+    qs = R.quarterly_summary(fq)
+    assert qs["revenue_qoq"].iloc[1] == pytest.approx(0.10)
+    assert qs["revenue_yoy"].iloc[-1] == pytest.approx(0.30)        # vs Mar-2025 quarter
+    assert math.isnan(qs["revenue_yoy"].iloc[1])
+    assert qs["ebitda_margin_ly"].iloc[-1] == pytest.approx(0.20)
+
+
+def test_quarter_label():
+    assert F.quarter_label(pd.Timestamp("2025-09-30")) == "Q2 FY26"
+    assert F.quarter_label(pd.Timestamp("2026-03-31")) == "Q4 FY26"
+    assert F.quarter_label(pd.Timestamp("2026-06-30")) == "Q1 FY27"
+
+
+def test_excel_workbook_formats():
+    import io
+    from openpyxl import load_workbook
+    from equitypilot.reports.excel_export import workbook
+    df = pd.DataFrame({"Company": ["A"], "ROE": [0.153], "P/E": [21.4]})
+    wb = load_workbook(io.BytesIO(workbook({"Screen": (df, {"ROE": "pct", "P/E": "x"})}, ["note"])))
+    ws = wb["Screen"]
+    assert ws["B2"].number_format == "0.0%" and ws["B2"].value == pytest.approx(0.153)
+    assert ws.freeze_panes == "B2" and "Notes" in wb.sheetnames
+
+
+def test_cli_status_and_offline_refresh(capsys):
+    from equitypilot import cli
+    assert cli.main(["status"]) == 0
+    assert "Companies:" in capsys.readouterr().out
+    assert cli.main(["refresh", "--quotes-only"]) == 1             # offline mode in tests

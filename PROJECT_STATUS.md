@@ -2,7 +2,7 @@
 
 _Source of truth for what is built and tested. Updated at the end of every phase._
 
-**Last updated:** 12 Nov 2026 · **Status:** Phases 1–10 complete. Remaining items needing the owner's action are listed in TODO.md.
+**Last updated:** 12 Nov 2026 · **Status:** Phases 1–10 complete, plus post-v1 enhancements (quarterly results, bank metrics, Excel exports, CLI refresh). Remaining items need the owner's action – see TODO.md.
 
 ## Architecture (fixed – do not restructure)
 
@@ -11,9 +11,10 @@ app.py                     entry point: page config, theme, st.navigation (17 pa
 equitypilot/
   config.py · db.py · formatting.py
   data/      schema · universe · yahoo · official · sample · uploads · repository
-  analytics/ ratios · valuation · screener · technicals · risk · portfolio
+  analytics/ ratios · valuation · screener · technicals · risk · bank · portfolio
   ai/        context · offline · providers
-  reports/   pdf_report
+  reports/   pdf_report · excel_export
+  cli.py · __main__.py   python -m equitypilot status | refresh
   content/   glossary · learning
   ui/        theme · components · charts
 views/       dashboard company financials valuation technicals risk news screener compare
@@ -37,14 +38,24 @@ docs/        DEPLOYMENT.md · DEMO_SCRIPT.md · screenshots/ · sample_report_SA
 | 9 | Full testing, security checks, UI polish, mobile check | ✅ Done · tested |
 | 10 | README, screenshots, deployment guide, demo script | ✅ Done (GitHub push and cloud deploy need the owner's account – see TODO) |
 
+## Post-v1 enhancements (all tested)
+
+| Feature | Where | Tests |
+|---|---|---|
+| Quarterly results (QoQ/YoY, margins, missing-quarter flags) | Financial Analysis → Quarterly results | quarterly_summary maths, quarter labels, page render |
+| Bank metrics (NIM, GNPA, NNPA, PCR, CRAR, CASA, cost-to-income, credit cost) | Company Research → Bank metrics; risk checks; AI context; PDF risk table | bands incl. RBI 11.5% CRAR floor, sample bank flags, grounded assistant answer, bank report |
+| Fictional sample bank (Epsilon Bank Ltd) | Sample dataset | all pages render; DCF disabled, justified P/B shown |
+| Formatted Excel export | Stock Screener, Company Comparison | number formats, frozen panes, notes sheet |
+| CLI refresh / status for scheduling | `python -m equitypilot` | status output; offline refresh refusal; live run verified for TCS/INFY |
+
 ## Testing evidence (what was actually run)
 
-- **pytest: 106 tests passing** (offline, temporary DB). These cover:
+- **pytest: 130 tests passing** (offline, temporary DB). These cover:
   - Hand-calculated ratio, DCF, WACC, reverse-DCF, sensitivity, justified P/B, technical indicator, Altman Z″, XIRR and concentration checks.
   - Upload parsers (periods, aliases, units, outflow signs, NSE price CSV), PDF extraction and search, and security helpers.
   - AI grounding (all offline facts traceable to sources; recommendations declined; missing info admitted).
   - PDF reports for sample companies.
-  - AppTest render of all 17 pages for all 4 sample companies, plus interactions (assistant chat input, portfolio, quiz).
+  - AppTest render of all 17 pages for all 5 sample companies (incl. the sample bank), plus interactions (assistant chat input, portfolio, quiz).
 - **Real-data render check**: every company page rendered for all 44 real companies against the real local DB, with no exceptions. This found and fixed one bug (Nestlé ROE above an input maximum).
 - **Visual checks**: headless-Edge screenshots of every page at 1440px, and a phone check at 390px. PDF reports were rendered to images and inspected.
 - **Live data verified**: Yahoo fetch for 44 NSE companies (profile, quote, 4–5 FY plus quarterly statements, about 5 years of daily prices, news), and live NIFTY/SENSEX/VIX tiles.
@@ -60,5 +71,6 @@ docs/        DEPLOYMENT.md · DEMO_SCRIPT.md · screenshots/ · sample_report_SA
 
 - NSE blocks automated access (HTTP 403 verified); there is no official public API → deep links plus uploads.
 - Yahoo data is delayed, gives 4–5 fiscal years, and does not state its basis.
-- No OCR for scanned PDFs (detected and reported).
+- No OCR for scanned PDFs (detected and reported) – needs a system install (Tesseract).
+- Yahoo sometimes omits a quarter (e.g. TCS Sep-2025) – flagged in the Quarterly results view.
 - The free cloud tier has an ephemeral SQLite database.

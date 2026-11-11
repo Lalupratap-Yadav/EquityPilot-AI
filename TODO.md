@@ -7,10 +7,12 @@
 - [ ] Choose a licence (e.g. MIT) if you want others to reuse the code.
 - [ ] Optional: enable the Claude API engine with your own key (paid; costs are shown in the app).
 
-## Possible enhancements (not required for v1)
-- [ ] Quarterly results view (QoQ / YoY trend cards) using the stored quarterly statements.
-- [ ] Screener export to Excel with formatting.
-- [ ] Bank-specific metrics from uploads (NIM, GNPA/NNPA, CASA, CRAR) with a dedicated bank dashboard.
-- [ ] OCR for scanned PDFs (e.g. Tesseract), which needs a system install.
-- [ ] Persistent cloud database (e.g. a hosted Postgres) for deployments.
-- [ ] Scheduled background refresh of the universe.
+## Completed after v1
+- [x] Quarterly results view (QoQ / YoY, margins, missing-quarter flags)
+- [x] Screener and comparison export to formatted Excel
+- [x] Bank-specific metrics (NIM, GNPA/NNPA, PCR, CRAR, CASA, cost-to-income, credit cost) with risk bands, AI context and report
+- [x] Scheduled refresh via `python -m equitypilot refresh` (Task Scheduler / cron)
+
+## Not done – needs infrastructure outside this project
+- [ ] OCR for scanned PDFs (requires installing Tesseract on the machine/server).
+- [ ] Persistent hosted database for cloud deployment (requires a database account, e.g. a managed Postgres).

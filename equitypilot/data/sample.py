@@ -103,6 +103,30 @@ def _company_financials(seed: int, base_rev: float, growth: float, margin: float
     return rows
 
 
+QUARTER_ENDS = [date(2025, 6, 30), date(2025, 9, 30), date(2025, 12, 31), date(2026, 3, 31),
+                date(2026, 6, 30), date(2026, 9, 30)]
+SEASONALITY = [0.235, 0.245, 0.255, 0.265]   # share of annual revenue by fiscal quarter (Q1..Q4)
+
+
+def _quarterly(annual: list[dict], seed: int, growth: float) -> list[dict]:
+    """Six fictional quarters (Q1 FY26 - Q2 FY27) consistent with the FY2026 annual figures."""
+    rng = np.random.default_rng(seed + 50)
+    fy26 = {r["line_item"]: r["value"] for r in annual if r["period_end"] == date(2026, 3, 31)}
+    rows = []
+    for i, qe in enumerate(QUARTER_ENDS):
+        scale = SEASONALITY[i % 4] * (1 + growth if i >= 4 else 1.0)
+        margin_noise = 1 + rng.normal(0, 0.04)
+        for key in ("revenue", "ebitda", "ebit", "net_income"):
+            v = fy26[key] * scale * (1.0 if key == "revenue" else margin_noise)
+            rows.append({"statement": "income", "period_end": qe, "period_type": "quarterly", "basis": "consolidated",
+                         "line_item": key, "value": float(v)})
+        rows.append({"statement": "income", "period_end": qe, "period_type": "quarterly", "basis": "consolidated",
+                     "line_item": "eps_diluted", "value": float(fy26["net_income"] * scale * margin_noise / fy26["shares_diluted"])})
+        rows.append({"statement": "income", "period_end": qe, "period_type": "quarterly", "basis": "consolidated",
+                     "line_item": "shares_diluted", "value": float(fy26["shares_diluted"])})
+    return rows
+
+
 def _price_series(seed: int, last_eps: float, pe: float, beta: float, days: int = 760) -> pd.DataFrame:
     rng = np.random.default_rng(seed + 100)
     end = pd.Timestamp("2026-10-30")
@@ -122,7 +146,7 @@ def _price_series(seed: int, last_eps: float, pe: float, beta: float, days: int 
 def load_sample_data(force: bool = False) -> int:
     """Insert the sample companies (idempotent). Returns number of companies inserted/refreshed."""
     existing = db.read_df(db.select(db.companies.c.symbol).where(db.companies.c.is_sample == True))  # noqa: E712
-    if not force and len(existing) == len(SAMPLE_COMPANIES):
+    if not force and len(existing) == len(SAMPLE_COMPANIES) + 1:   # + the sample bank
         return 0
     now = db.utcnow()
     base = {"source": SAMPLE_SOURCE, "source_url": None, "data_type": "sample", "fetched_at": now}
@@ -135,7 +159,7 @@ def load_sample_data(force: bool = False) -> int:
             "is_sample": True, "in_universe": True, **base}], ["symbol"])
         shares = shares_map[sym]
         fin = _company_financials(idx + 1, rev, g, m, de, shares)
-        db.upsert(db.financials, [{"symbol": sym, "currency": "INR", **r, **base} for r in fin],
+        db.upsert(db.financials, [{"symbol": sym, "currency": "INR", **r, **base} for r in fin + _quarterly(fin, idx + 1, g)],
                   ["symbol", "statement", "period_end", "period_type", "basis", "line_item"])
         last_eps = [r["value"] for r in fin if r["line_item"] == "eps_diluted"][-1]
         px = _price_series(idx + 1, last_eps, pes[sym], beta)
@@ -168,7 +192,64 @@ def load_sample_data(force: bool = False) -> int:
     peers = [s[0] for s in SAMPLE_COMPANIES]
     db.upsert(db.competitors, [{"symbol": a, "peer_symbol": b, "note": "Sample peer"}
                                for a in peers for b in peers if a != b], ["symbol", "peer_symbol"])
-    return len(SAMPLE_COMPANIES)
+    _load_sample_bank(base, now)
+    return len(SAMPLE_COMPANIES) + 1
+
+
+SAMPLE_BANK = "SAMPLE-EPSILON"
+# Quarterly bank metrics (percent) - fictional, chosen to look like a well-run private bank
+BANK_SERIES = {
+    "nim": [3.95, 3.90, 3.86, 3.82, 3.80], "gnpa": [2.10, 2.02, 1.95, 1.88, 1.82],
+    "nnpa": [0.62, 0.58, 0.55, 0.52, 0.50], "casa": [42.5, 41.8, 41.0, 40.4, 40.1],
+    "crar": [17.6, 17.4, 17.9, 17.5, 17.3], "pcr": [70.5, 71.2, 71.8, 72.4, 72.6],
+    "cost_to_income": [44.8, 44.1, 43.9, 43.5, 43.2], "credit_cost": [0.85, 0.80, 0.78, 0.76, 0.74],
+}
+BANK_QUARTERS = ["2025-09-30", "2025-12-31", "2026-03-31", "2026-06-30", "2026-09-30"]
+
+
+def _load_sample_bank(base: dict, now: datetime) -> None:
+    """A fictional bank so that bank-specific analysis (justified P/B, asset quality) works offline."""
+    sym, name, shares = SAMPLE_BANK, "Epsilon Bank Ltd (Sample)", 2.5e9
+    db.upsert(db.companies, [{
+        "symbol": sym, "name": name, "exchange": "SAMPLE", "isin": None, "sector": "Financial Services",
+        "industry": "Banks - Regional", "website": None, "employees": None, "is_sample": True, "in_universe": True,
+        "description": "FICTIONAL demonstration bank. Models a mid-sized private-sector bank with a retail-heavy "
+                       "loan book - useful for studying P/B-based valuation and asset-quality metrics.", **base}], ["symbol"])
+    rng = np.random.default_rng(99)
+    rows, assets = [], 400000 * CR
+    for i, fy in enumerate(YEARS):
+        if i:
+            assets *= 1.15 + rng.normal(0, 0.01)
+        equity = assets * 0.11
+        ni = assets * (0.016 + rng.normal(0, 0.001))
+        pbt = ni / 0.75
+        vals = {"revenue": assets * 0.085, "pretax_income": pbt, "tax": pbt - ni, "net_income": ni,
+                "eps_basic": ni / shares, "eps_diluted": ni / shares, "shares_diluted": shares,
+                "total_assets": assets, "cash": assets * 0.06, "total_liabilities": assets - equity,
+                "total_debt": assets * 0.08, "total_equity": equity, "retained_earnings": equity * 0.8,
+                "shares_outstanding": shares, "cfo": ni * (1 + rng.normal(0, 0.8)), "capex": -assets * 0.0008,
+                "dividends_paid": -ni * 0.2}
+        rows += [{"symbol": sym, "statement": LINE_ITEMS[k][0], "period_end": date(fy, 3, 31), "period_type": "annual",
+                  "basis": "consolidated", "line_item": k, "value": float(v), "currency": "INR", **base}
+                 for k, v in vals.items()]
+    db.upsert(db.financials, rows, ["symbol", "statement", "period_end", "period_type", "basis", "line_item"])
+    last_eps = ni / shares
+    px = _price_series(9, last_eps, 15, 1.05)
+    db.upsert(db.prices, [{"symbol": sym, **r, "source": SAMPLE_SOURCE, "data_type": "sample", "fetched_at": now}
+                          for r in px.to_dict("records")], ["symbol", "date"])
+    last, prev, tail = float(px["close"].iloc[-1]), float(px["close"].iloc[-2]), px.tail(250)
+    db.upsert(db.quotes, [{
+        "symbol": sym, "price": last, "prev_close": prev, "market_cap": last * shares, "shares_outstanding": shares,
+        "beta": 1.05, "week52_high": float(tail["high"].max()), "week52_low": float(tail["low"].min()),
+        "dividend_rate": None, "currency": "INR", "as_of": datetime(2026, 10, 30, 10, 0), **base}], ["symbol"])
+    db.execute(db.delete(db.shareholding).where(db.shareholding.c.symbol == sym))
+    db.execute(db.insert(db.shareholding), [{"symbol": sym, "period": "2026-09-30", "category": c, "pct": p,
+                                             "pledged_pct": None, **base} for c, p in
+                                            {"Promoter & Promoter Group": 26.0, "FII/FPI": 38.0, "DII": 24.0,
+                                             "Public & Others": 12.0}.items()])
+    db.upsert(db.bank_metrics, [{"symbol": sym, "period": q, "metric": m, "value": vals_[i], **base}
+                                for m, vals_ in BANK_SERIES.items() for i, q in enumerate(BANK_QUARTERS)],
+              ["symbol", "period", "metric"])
 
 
 SAMPLE_PORTFOLIO = [

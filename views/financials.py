@@ -35,7 +35,7 @@ if fd.empty:
     st.page_link("views/data_manager.py", label="Open Data Manager", icon=":material/upload_file:")
     st.stop()
 
-plabels = [F.fiscal_label(p) if ptype == "annual" else pd.Timestamp(p).strftime("%b %Y") for p in fd.periods]
+plabels = [F.fiscal_label(p) if ptype == "annual" else F.quarter_label(p) for p in fd.periods]
 c3.html(f"<div style='text-align:right'>{ui.badges(fd.data_types)}</div>")
 if basis == "unspecified":
     ui.note("Basis not stated by the provider. Yahoo Finance generally shows consolidated figures for Indian "
@@ -44,8 +44,57 @@ if basis == "unspecified":
 DIV, UNIT = F.amount_unit(fd.currency)
 rt = R.compute_ratios(fd)
 issues = R.quality_checks(fd)
-tab_st, tab_ratio, tab_trend, tab_quality = st.tabs(
-    ["Statements", "Ratios & DuPont", "Trends", f"Data quality ({len(issues)})"])
+tab_st, tab_ratio, tab_trend, tab_q, tab_quality = st.tabs(
+    ["Statements", "Ratios & DuPont", "Trends", "Quarterly results", f"Data quality ({len(issues)})"])
+
+with tab_q:
+    q_bases = repo.available_bases(sym, "quarterly")
+    fq = repo.get_financials(sym, "quarterly", basis if basis in q_bases else None, auto_refresh=False)
+    if fq.empty:
+        ui.empty_state("No quarterly results stored",
+                       "Refresh the company (Company Research → Refresh data) or upload quarterly figures in the Data Manager "
+                       "with period type 'quarterly'.")
+    else:
+        qdiv, qunit = F.amount_unit(fq.currency)
+        qs = R.quarterly_summary(fq)
+        last = qs.iloc[-1]
+        st.markdown(f"##### Latest quarter: {F.quarter_label(qs.index[-1])} (ended {F.fdate(qs.index[-1])})")
+
+        def growth_delta(v, label):
+            return {"delta": f"{F.pct(v, signed=True)} {label}" if not F.is_missing(v) else f"{label} n/a",
+                    "sign": 0 if F.is_missing(v) else (1 if v > 0 else -1)}
+
+        ui.kpis([
+            {"label": "Revenue", "value": F.money(last["revenue"], fq.currency), **growth_delta(last["revenue_yoy"], "YoY")},
+            {"label": "Revenue QoQ", "value": F.pct(last["revenue_qoq"], signed=True),
+             "help": "Sequential growth vs the previous quarter - affected by seasonality."},
+            {"label": "Net profit", "value": F.money(last["net_income"], fq.currency), **growth_delta(last["net_income_yoy"], "YoY")},
+            {"label": "EBITDA margin", "value": F.pct(last["ebitda_margin"]),
+             "delta": f"{(last['ebitda_margin'] - last['ebitda_margin_ly']) * 100:+.1f} pp YoY" if not F.is_missing(last.get("ebitda_margin_ly")) else ""},
+            {"label": "Net margin", "value": F.pct(last["net_margin"])},
+            {"label": "Diluted EPS", "value": F.num(last["eps"]), "help": "Quarterly EPS in the reporting currency."},
+        ])
+        show = pd.DataFrame({
+            F.quarter_label(p): [F.amount(r["revenue"], fq.currency), F.pct(r["revenue_yoy"], signed=True), F.pct(r["revenue_qoq"], signed=True),
+                                 F.amount(r["ebitda"], fq.currency), F.pct(r["ebitda_margin"]), F.amount(r["net_income"], fq.currency),
+                                 F.pct(r["net_income_yoy"], signed=True), F.pct(r["net_margin"]), F.num(r["eps"])]
+            for p, r in qs.iterrows()},
+            index=["Revenue", "Revenue growth YoY", "Revenue growth QoQ", "EBITDA", "EBITDA margin", "Net profit",
+                   "Net profit growth YoY", "Net margin", "Diluted EPS"])
+        show.index.name = qunit
+        ui.fin_table(show, bold={"Revenue", "Net profit"})
+        chart = pd.DataFrame({"Revenue": qs["revenue"] / qdiv, "Net profit": qs["net_income"] / qdiv})
+        chart.index = [F.quarter_label(p) for p in qs.index]
+        st.plotly_chart(C.grouped_bars(chart, f"Quarterly revenue and net profit ({qunit})", height=300),
+                        width="stretch", config=C.config())
+        expected = pd.date_range(qs.index.min(), qs.index.max(), freq="QE")
+        missing_q = [F.quarter_label(d) for d in expected if d.normalize() not in {pd.Timestamp(p).normalize() for p in qs.index}]
+        if missing_q:
+            ui.note("Not provided by the source: " + ", ".join(missing_q) + ". Growth rates that would need these quarters are "
+                    "left blank - upload them from the results filing to complete the series.", "warn")
+        st.caption("YoY compares with the same quarter a year earlier (blank if not available); QoQ compares with the "
+                   "previous quarter. Quarterly figures are unaudited (limited review) when first published.")
+        ui.source_footer(fq.sources, fq.fetched_at, basis=fq.basis, urls=fq.source_urls)
 
 
 def fmt_value(key, v):

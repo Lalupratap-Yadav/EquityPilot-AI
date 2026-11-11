@@ -15,11 +15,11 @@ It was built to demonstrate equity-research practice as taught in the NISM Serie
 | Module | What it does |
 |---|---|
 | **Dashboard** | NIFTY 50, SENSEX, NIFTY Bank, NIFTY IT and India VIX (delayed); company search; watchlist; gainers, losers and sector moves; recent activity |
-| **Company Research** | Profile, key metrics, business-model notes, revenue segments, shareholding (with pledge flags), editable peer group, official NSE/BSE/SEBI links |
-| **Financial Analysis** | Income statement, balance sheet and cash flow (annual and quarterly) in ₹ crore; 25 ratios with formulas; DuPont; Piotroski F-score; trends; CAGR; data-quality checks; Excel/CSV export |
+| **Company Research** | Profile, key metrics, business-model notes, revenue segments, shareholding (with pledge flags), editable peer group, official NSE/BSE/SEBI links; for banks, a **Bank metrics** tab (NIM, GNPA/NNPA, PCR, CRAR, CASA, cost-to-income, credit cost) with trends and screening bands |
+| **Financial Analysis** | Income statement, balance sheet and cash flow (annual and quarterly) in ₹ crore; 25 ratios with formulas; DuPont; Piotroski F-score; trends; CAGR; **quarterly results** (QoQ/YoY, margins, missing-quarter flags); data-quality checks; Excel/CSV export |
 | **Valuation** | P/E, P/B, EV/EBITDA with history; CAPM/WACC builder; FCFF DCF with every step shown; bear/base/bull scenarios; WACC × g sensitivity; reverse DCF; peer-relative valuation; justified P/B for banks |
-| **Stock Screener** | Presets (quality compounders, low-debt value, growth, cash generators, dividend payers) plus custom filters on ROE, ROCE, D/E, P/E, growth, margins and more; open, compare or watchlist results; CSV export |
-| **Company Comparison** | 2–5 companies side by side; warnings when fiscal periods, statement bases or currencies differ; indexed revenue and price-performance charts |
+| **Stock Screener** | Presets (quality compounders, low-debt value, growth, cash generators, dividend payers) plus custom filters on ROE, ROCE, D/E, P/E, growth, margins and more; open, compare or watchlist results; CSV and formatted Excel export |
+| **Company Comparison** | 2–5 companies side by side; warnings when fiscal periods, statement bases or currencies differ; indexed revenue and price-performance charts; CSV and Excel export |
 | **Technical Analysis** | Candlesticks; SMA/EMA/Bollinger overlays; volume; RSI; MACD; returns; volatility; drawdown; ATR; beta vs NIFTY 50 |
 | **Risk Analysis** | Rule-based checks for debt, liquidity, profitability, cash flow, concentration and market risk, each with its threshold shown; Altman Z″; sector considerations; your own risk notes |
 | **News & Disclosures** | Third-party headlines with publisher and time; a log of exchange disclosures with filing links; uploaded documents; official links |
@@ -49,7 +49,7 @@ It was built to demonstrate equity-research practice as taught in the NISM Serie
    - Statements reported in USD (e.g. Infosys, HCLTech on Yahoo): price multiples are disabled, while ratios stay valid.
    - Fiscal-year changes (e.g. Nestlé India): year-on-year growth is left blank across the irregular period.
    - Balance-sheet mismatches are flagged.
-5. **Works offline.** Four clearly watermarked **fictional** sample companies let every feature run without internet access, and they drive the automated tests.
+5. **Works offline.** Five clearly watermarked **fictional** sample companies (including a sample bank) let every feature run without internet access, and they drive the automated tests.
 
 ---
 
@@ -86,7 +86,7 @@ EQUITYPILOT_OFFLINE=1 streamlit run app.py
 python -m pytest -q
 ```
 
-There are 100+ tests. They cover:
+There are 130 tests. They cover:
 - Hand-calculated checks of the ratios, DCF, WACC, reverse DCF, technical indicators, Altman Z″ and XIRR.
 - The upload parsers and PDF extraction.
 - The assistant's grounding rules: every figure must be traceable to a source, and recommendation requests are declined.
@@ -94,6 +94,17 @@ There are 100+ tests. They cover:
 - A Streamlit `AppTest` render of every page, for every sample company.
 
 The tests run offline against a temporary database.
+
+### Scheduled data refresh (command line)
+
+```bash
+python -m equitypilot status                    # what is cached and when it was retrieved
+python -m equitypilot refresh                   # quotes, statements and prices for the screener universe
+python -m equitypilot refresh --quotes-only     # fast: delayed quotes only
+python -m equitypilot refresh --news --symbols TCS INFY
+```
+
+Schedule it with Windows Task Scheduler or cron (see docs/DEPLOYMENT.md). It returns a non-zero exit code if any company fails to refresh.
 
 ---
 
@@ -118,9 +129,10 @@ equitypilot/
   db.py                     SQLite schema (SQLAlchemy Core) - provenance columns on every table
   formatting.py             ₹ / crore / % formatting, IST timestamps, FY labels, input sanitising
   data/                     schema · universe · yahoo provider · official links · sample data · uploads · repository
-  analytics/                ratios · valuation · screener · technicals · risk · portfolio
+  analytics/                ratios · valuation · screener · technicals · risk · bank · portfolio
   ai/                       context (grounded sources) · offline analyst · providers (Claude / Ollama)
-  reports/pdf_report.py     ReportLab + matplotlib research report
+  reports/                  pdf_report (ReportLab + matplotlib) · excel_export (formatted workbooks)
+  cli.py                    command-line refresh/status (python -m equitypilot)
   content/                  glossary · learning modules & quizzes
   ui/                       theme (CSS) · components · charts (Plotly)
 views/                      one file per page
@@ -149,7 +161,8 @@ See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for a 7-minute walkthrough for in
 - Market data is delayed or end-of-day; there is no real-time feed.
 - Yahoo Finance typically provides 4–5 fiscal years of statements and does not state the consolidated/standalone basis.
 - Exchange disclosures cannot be fetched automatically (no public API); they are logged manually with links.
-- PDF extraction needs text-based PDFs. Scanned documents are detected, but OCR is not included.
+- PDF extraction needs text-based PDFs. Scanned documents are detected, but OCR is not included (it would need a system install such as Tesseract).
+- Bank metrics (NIM, GNPA, CRAR, ...) are not available from the provider and must be entered from disclosures.
 - Portfolio risk statistics apply current weights to past returns (an ex-post approximation).
 - On free cloud hosting, the SQLite database resets when the app restarts.
 

@@ -18,7 +18,7 @@ ui.company_header(company, quote)
 
 fd = repo.get_financials(sym)
 px = repo.get_prices(sym, auto_refresh=False)
-flags = K.assess(company, fd, px, repo.get_shareholding(sym), repo.get_segments(sym))
+flags = K.assess(company, fd, px, repo.get_shareholding(sym), repo.get_segments(sym), repo.get_bank_metrics(sym))
 summary = K.summarise(flags)
 score = K.overall_score(flags)
 

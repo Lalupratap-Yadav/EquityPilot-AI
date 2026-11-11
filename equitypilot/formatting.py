@@ -171,3 +171,21 @@ def safe_url(url: Any) -> str | None:
 def safe_filename(text: str) -> str:
     import re
     return re.sub(r"[^A-Za-z0-9&_-]+", "_", text).strip("_")[:80] or "file"
+
+
+def quarter_label(d: Any) -> str:
+    """Indian fiscal quarter: 2025-09-30 -> 'Q2 FY26' (Apr-Jun = Q1 ... Jan-Mar = Q4)."""
+    if d is None or (not isinstance(d, str) and is_missing_date(d)):
+        return MISSING
+    import pandas as pd
+    t = pd.Timestamp(d)
+    fy = t.year + 1 if t.month > 3 else t.year
+    q = {4: 1, 5: 1, 6: 1, 7: 2, 8: 2, 9: 2, 10: 3, 11: 3, 12: 3, 1: 4, 2: 4, 3: 4}[t.month]
+    return f"Q{q} FY{fy % 100:02d}"
+
+
+def money(x: Any, currency: str = "INR") -> str:
+    """₹73,188 Cr for INR amounts; 'USD 1,234 mn' for other reporting currencies."""
+    if is_missing(x):
+        return MISSING
+    return f"₹{amount(x, currency)} Cr" if (currency or "INR") == "INR" else f"{currency} {amount(x, currency)} mn"

@@ -344,7 +344,8 @@ def build_report(symbol: str, opts: ReportOptions | None = None) -> bytes:
 
     # ------------------------------------------------------------- risk
     if "risk" in opts.sections:
-        flags = K.assess(company, fd, px, repo.get_shareholding(symbol), repo.get_segments(symbol))
+        flags = K.assess(company, fd, px, repo.get_shareholding(symbol), repo.get_segments(symbol),
+                     repo.get_bank_metrics(symbol))
         rows = [["Category", "Check", "Value", "Level", "Thresholds"]] + [
             [f["category"], f["title"], f["value"], K.LEVEL_LABEL[f["level"]], f["rule"]] for f in flags]
         story.append(_section("6. Risk assessment", _table(rows, [24 * mm, 45 * mm, 22 * mm, 20 * mm, 59 * mm])))

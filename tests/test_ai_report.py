@@ -78,3 +78,17 @@ def test_pdf_report_builds(symbol):
     assert n >= 4
     assert "SEBI" in text and "Sources and references" in text
     assert "SAMPLE" in text
+
+
+def test_offline_answer_uses_bank_metrics():
+    ctx = build_context("SAMPLE-EPSILON", "balance sheet")
+    a = offline.answer(ctx, "Is the balance sheet strong?")
+    assert "Gross NPA" in a and "CRAR" in a
+    facts = a.split("**Automated interpretation")[0]
+    total, untraced = grounding_check(facts, ctx.render())
+    assert total > 0 and not untraced, untraced
+
+
+def test_bank_report_builds():
+    pdf = build_report("SAMPLE-EPSILON", ReportOptions())
+    assert pdf[:4] == b"%PDF"

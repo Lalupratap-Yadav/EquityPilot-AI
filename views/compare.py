@@ -7,6 +7,7 @@ from equitypilot import formatting as F
 from equitypilot.analytics import ratios as R
 from equitypilot.analytics.screener import METRIC_COLUMNS, company_metrics
 from equitypilot.data import repository as repo
+from equitypilot.reports.excel_export import workbook
 from equitypilot.ui import charts as C
 from equitypilot.ui import components as ui
 
@@ -80,7 +81,22 @@ ui.fin_table(t, sections=sections, negative_red=True)
 st.caption("★ = most favourable value in the group (lowest for valuation multiples and leverage, highest otherwise). "
            "A favourable number is a prompt for investigation, not a conclusion.")
 export = rows.set_index("symbol")[list(METRIC_COLUMNS)].T
-ui.download_csv(export, "comparison.csv", "Download comparison (CSV)")
+d1, d2, _ = st.columns([1, 1, 3])
+with d1:
+    ui.download_csv(export, "comparison.csv", "Comparison (CSV)")
+kind_fmt = {"pct": "pct", "x": "x", "inr": "inr", "cr": "cr", "num": "num"}
+xdf = rows[["name", "symbol"] + list(METRIC_COLUMNS)].copy()
+for k, (lbl, kind) in METRIC_COLUMNS.items():
+    xdf[k] = pd.to_numeric(xdf[k], errors="coerce") / (config.CRORE if kind == "cr" else 1)
+xdf = xdf.rename(columns={"name": "Company", "symbol": "Symbol",
+                          **{k: (lbl + " (₹ Cr)" if kind == "cr" else lbl) for k, (lbl, kind) in METRIC_COLUMNS.items()}})
+fmts = {(lbl + " (₹ Cr)" if kind == "cr" else lbl): kind_fmt.get(kind, "") for k, (lbl, kind) in METRIC_COLUMNS.items()}
+d2.download_button("Comparison (Excel)", workbook({"Comparison": (xdf, fmts)},
+                   ["Each company uses its own latest fiscal year; P/E uses TTM earnings where available.",
+                    "Financial companies show blanks for EV/EBITDA, D/E, current ratio and interest coverage (not meaningful).",
+                    "Source: Yahoo Finance via yfinance (third-party) and EquityPilot calculations."]),
+                   "comparison.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                   icon=":material/table_view:")
 
 # ------------------------------------------------------------------ charts
 st.markdown("##### Visual comparison")

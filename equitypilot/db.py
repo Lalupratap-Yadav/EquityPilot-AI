@@ -150,6 +150,17 @@ documents = Table(
     Column("uploaded_at", DateTime),
 )
 
+bank_metrics = Table(
+    # Bank / NBFC metrics entered from quarterly disclosures (not available from the market-data provider)
+    "bank_metrics", metadata,
+    Column("symbol", String, primary_key=True),
+    Column("period", String, primary_key=True),           # quarter end, e.g. 2025-09-30
+    Column("metric", String, primary_key=True),           # key from analytics.bank.BANK_METRICS
+    Column("value", Float),                               # percent value, e.g. 1.35 for 1.35%
+    Column("source", String), Column("source_url", String),
+    Column("data_type", String), Column("fetched_at", DateTime),
+)
+
 watchlist = Table(
     "watchlist", metadata,
     Column("symbol", String, primary_key=True),
@@ -258,7 +269,7 @@ def recent_activity(limit: int = 10) -> pd.DataFrame:
 
 __all__ = [
     "metadata", "companies", "quotes", "financials", "prices", "segments", "shareholding",
-    "competitors", "disclosures", "documents", "watchlist", "holdings", "activity", "settings",
+    "competitors", "disclosures", "documents", "bank_metrics", "watchlist", "holdings", "activity", "settings",
     "get_engine", "read_df", "upsert", "execute", "get_setting", "set_setting", "log_activity",
     "recent_activity", "utcnow", "select", "insert", "update", "delete",
 ]

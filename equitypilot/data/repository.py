@@ -261,6 +261,26 @@ def get_shareholding(symbol: str) -> pd.DataFrame:
                       .order_by(db.shareholding.c.period))
 
 
+def get_bank_metrics(symbol: str) -> pd.DataFrame:
+    return db.read_df(db.select(db.bank_metrics).where(db.bank_metrics.c.symbol == symbol)
+                      .order_by(db.bank_metrics.c.period))
+
+
+def save_bank_metrics(symbol: str, period: str, values: dict[str, float], source: str, source_url: str | None) -> int:
+    """Store one quarter of bank metrics (percent values) entered from an official disclosure."""
+    from ..formatting import safe_url
+    now = db.utcnow()
+    rows = [{"symbol": symbol, "period": period, "metric": k, "value": float(v), "source": source,
+             "source_url": safe_url(source_url), "data_type": "user_entered", "fetched_at": now}
+            for k, v in values.items() if v is not None and not pd.isna(v)]
+    return db.upsert(db.bank_metrics, rows, ["symbol", "period", "metric"])
+
+
+def delete_bank_metrics(symbol: str, period: str) -> None:
+    db.execute(db.delete(db.bank_metrics).where(db.bank_metrics.c.symbol == symbol)
+               .where(db.bank_metrics.c.period == period))
+
+
 # ------------------------------------------------------------------ news & disclosures
 def refresh_news(symbol: str) -> tuple[bool, str]:
     if symbol.startswith("SAMPLE-"):

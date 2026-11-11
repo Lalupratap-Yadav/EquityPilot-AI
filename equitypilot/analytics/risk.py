@@ -10,11 +10,12 @@ import numpy as np
 import pandas as pd
 
 from ..data.repository import FinancialData
+from . import bank as B
 from . import ratios as R
 from . import technicals as T
 
 LEVELS = ["good", "warning", "serious", "critical"]
-LEVEL_LABEL = {"good": "LOW", "warning": "MODERATE", "serious": "ELEVATED", "critical": "HIGH", "na": "N/A"}
+LEVEL_LABEL = {"good": "LOW", "warning": "MODERATE", "serious": "ELEVATED", "critical": "HIGH", "na": "N/A", "info": "INFO"}
 
 SECTOR_CONSIDERATIONS = {
     "Technology": ["Revenue largely in foreign currency - INR/USD movements affect reported growth and margins.",
@@ -90,7 +91,8 @@ def altman_z_double_prime(fd: FinancialData) -> tuple[float | None, str, dict]:
 
 
 def assess(company: dict, fd: FinancialData, prices: pd.DataFrame | None = None,
-           shareholding: pd.DataFrame | None = None, segments: pd.DataFrame | None = None) -> list[dict]:
+           shareholding: pd.DataFrame | None = None, segments: pd.DataFrame | None = None,
+           bank_metrics: pd.DataFrame | None = None) -> list[dict]:
     flags: list[dict] = []
     fin = R.is_financial(company)
     rt = R.compute_ratios(fd) if not fd.empty else pd.DataFrame()
@@ -101,8 +103,13 @@ def assess(company: dict, fd: FinancialData, prices: pd.DataFrame | None = None,
 
     # ---- debt
     if fin:
-        flags.append(_flag("Debt", "Leverage (financial company)", "na", "n.m.", "—",
-                           "Debt/equity is structurally high for lenders; assess capital adequacy (CRAR) and asset quality instead."))
+        bank_flags = B.assess(bank_metrics) if bank_metrics is not None else []
+        if bank_flags:
+            flags.extend(bank_flags)
+        else:
+            flags.append(_flag("Asset quality", "Bank metrics", "na", "not entered", "—",
+                               "Debt/equity is not meaningful for lenders. Enter asset quality (GNPA/NNPA), capital adequacy "
+                               "(CRAR), CASA and NIM from the bank's quarterly disclosure on Company Research → Bank metrics."))
     else:
         de = lv("debt_to_equity")
         flags.append(_flag("Debt", "Debt to equity", _band(de, 0.5, 1.0, 2.0), f"{de:.2f}x" if de is not None and pd.notna(de) else "—",

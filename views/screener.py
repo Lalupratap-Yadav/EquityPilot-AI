@@ -5,6 +5,7 @@ import streamlit as st
 from equitypilot import config, db
 from equitypilot.analytics.screener import PRESETS, apply_filters, universe_metrics
 from equitypilot.data import repository as repo
+from equitypilot.reports.excel_export import workbook
 from equitypilot.ui import components as ui
 
 ui.page_header("Stock Screener", "Filter your research universe on fundamentals and valuation")
@@ -107,7 +108,7 @@ event = st.dataframe(view, hide_index=True, placeholder="—", width="stretch", 
                                     "Rev growth %": num("%.1f"), "Profit growth %": num("%.1f"),
                                     "Net margin %": num("%.1f"), "F-score": num("%d")})
 sel = [view.iloc[i]["Symbol"] for i in (event.selection.rows if event and event.selection else [])]
-b1, b2, b3, b4 = st.columns(4)
+b1, b2, b3, b4, b5 = st.columns(5)
 if b1.button("Open selected", disabled=len(sel) != 1, icon=":material/open_in_new:", width="stretch"):
     ui.set_symbol(sel[0])
     st.switch_page("views/company.py")
@@ -120,5 +121,24 @@ if b3.button("Add to watchlist", disabled=not sel, icon=":material/bookmark_add:
     st.toast(f"Added {len(sel)} to watchlist")
 b4.download_button("Export CSV", view.to_csv(index=False).encode(), "screener_results.csv", mime="text/csv",
                    icon=":material/download:", width="stretch")
+xl_cols = {"name": ("Company", ""), "symbol": ("Symbol", ""), "sector": ("Sector", ""), "price": ("Price (₹)", "inr"),
+           "market_cap_cr": ("Market cap (₹ Cr)", "cr"), "pe": ("P/E", "x"), "pb": ("P/B", "x"), "ev_ebitda": ("EV/EBITDA", "x"),
+           "roe": ("ROE", "pct"), "roce": ("ROCE", "pct"), "debt_to_equity": ("Debt/Equity", "x"),
+           "revenue_growth": ("Revenue growth YoY", "pct"), "net_income_growth": ("Profit growth YoY", "pct"),
+           "revenue_cagr_3y": ("Revenue CAGR 3Y", "pct"), "ebitda_margin": ("EBITDA margin", "pct"),
+           "net_margin": ("Net margin", "pct"), "cfo_to_net_income": ("CFO/Net profit", "x"), "fcf_margin": ("FCF margin", "pct"),
+           "dividend_yield": ("Dividend yield", "pct"), "piotroski": ("Piotroski F-score", "int"), "data_type": ("Data type", "")}
+xdf = res.assign(market_cap_cr=pd.to_numeric(res["market_cap"], errors="coerce") / config.CRORE)
+xdf = xdf[list(xl_cols)].rename(columns={k: v[0] for k, v in xl_cols.items()})
+for c in xdf.columns[3:-1]:
+    xdf[c] = pd.to_numeric(xdf[c], errors="coerce")
+xdf = xdf.sort_values("Market cap (₹ Cr)", ascending=False)
+active = [f"{k}: min {lo if lo is not None else 'any'}, max {hi if hi is not None else 'any'}" for k, (lo, hi) in filters.items()]
+b5.download_button("Export Excel", workbook({"Screener": (xdf, {v[0]: v[1] for v in xl_cols.values()})},
+                   [f"Preset: {preset}", "Filters (ratios as decimals): " + ("; ".join(active) or "none"),
+                    f"{len(xdf)} of {len(base)} companies matched", "Source: Yahoo Finance via yfinance (delayed / third-party) "
+                    "and EquityPilot calculations; sample companies are fictional."]),
+                   "screener_results.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                   icon=":material/table_view:", width="stretch")
 st.caption("Click column headers to sort. Select 1 row to open, 2-5 to compare. Ratios use each company's latest fiscal "
            "year (Yahoo Finance, basis not stated); P/E uses TTM earnings where available. Financials show '—' for D/E.")

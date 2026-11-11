@@ -13,6 +13,7 @@ import pandas as pd
 
 from .. import config, db
 from .. import formatting as F
+from ..analytics import bank as B
 from ..analytics import ratios as R
 from ..analytics import risk as K
 from ..analytics import valuation as V
@@ -135,9 +136,21 @@ def build_context(symbol: str, question: str = "", doc_ids: list[int] | None = N
             ctx.add("Sector note", "This is a financial-sector company: EV/EBITDA, debt/equity and current ratio are not "
                     "meaningful; use P/B, ROE and asset-quality data from filings.", "EquityPilot methodology", "calculated")
 
+    # ---- bank metrics (quarterly disclosures entered by the user)
+    bm = repo.get_bank_metrics(symbol)
+    if not bm.empty:
+        w = B.wide(bm)
+        lines = [f"{B.BANK_METRICS[k][0]}: " + ", ".join(f"{p} {v:.2f}%" for p, v in w.loc[k].dropna().items())
+                 for k in w.index]
+        ctx.add("Bank metrics from quarterly disclosures", "\n".join(lines), bm["source"].dropna().iloc[-1] if bm["source"].notna().any() else "—",
+                bm["data_type"].iloc[-1], bm["source_url"].dropna().iloc[-1] if bm["source_url"].notna().any() else None,
+                F.ist(pd.to_datetime(bm["fetched_at"]).max()))
+        ctx.data["bank_metrics"] = bm
+
     # ---- risk
     px = repo.get_prices(symbol, auto_refresh=False)
-    flags = K.assess(company, fd, px, repo.get_shareholding(symbol), repo.get_segments(symbol))
+    flags = K.assess(company, fd, px, repo.get_shareholding(symbol), repo.get_segments(symbol),
+                     repo.get_bank_metrics(symbol))
     ctx.data["risk_flags"] = flags
     if flags:
         score = K.overall_score(flags)

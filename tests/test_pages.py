@@ -29,7 +29,7 @@ def test_page_renders(page):
 
 
 @pytest.mark.parametrize("page", PAGES[1:])
-@pytest.mark.parametrize("symbol", ["SAMPLE-ALPHA", "SAMPLE-GAMMA", "SAMPLE-DELTA"])
+@pytest.mark.parametrize("symbol", ["SAMPLE-ALPHA", "SAMPLE-GAMMA", "SAMPLE-DELTA", "SAMPLE-EPSILON"])
 def test_company_pages_for_each_sample(page, symbol):
     at = run_page(page, symbol)
     assert not at.exception, [e.value for e in at.exception]
@@ -77,3 +77,22 @@ def test_learning_quiz_submission():
         r.set_value(0)
     at.button[0].click().run() if at.button else None
     assert not at.exception
+
+
+def test_bank_metrics_tab_and_quarterly_results():
+    at = run_page("views/company.py", "SAMPLE-EPSILON")
+    assert not at.exception
+    assert "Bank metrics" in [t.label for t in at.tabs]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert "Gross NPA" in html and "Capital adequacy" in html
+    at = run_page("views/financials.py", "SAMPLE-BETA")
+    html = " ".join(h.proto.body for h in at.get("html"))
+    md = " ".join(m.value for m in at.markdown)
+    assert "Latest quarter: Q2 FY27" in md and "Revenue growth YoY" in html and "Revenue QoQ" in html
+
+
+def test_bank_valuation_page_disables_dcf():
+    at = run_page("views/valuation.py", "SAMPLE-EPSILON")
+    assert not at.exception
+    html = " ".join(h.proto.body for h in at.get("html"))
+    assert "not appropriate for banks" in html and "Justified P/B" in html

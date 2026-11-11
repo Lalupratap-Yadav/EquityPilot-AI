@@ -44,10 +44,12 @@ with tab_mod:
                                                  "Business & segments: write your business-model notes and enter segment revenue from the annual report.",
                                                  "Shareholding: enter the quarterly pattern from the exchange filing; pledges are flagged.",
                                                  "Peers: auto-suggested by industry - edit and save; open a full comparison.",
+                                                 "Bank metrics (banks/NBFCs only): enter NIM, GNPA/NNPA, PCR, CRAR, CASA, cost-to-income and credit cost from quarterly disclosures; trends and screening bands are shown.",
                                                  "Official sources: direct links to NSE, BSE and SEBI pages for verification."]),
         "Financial Analysis": ("views/financials.py", ["Choose annual/quarterly and the statement basis (consolidated, standalone or provider basis).",
                                                       "Statements: values in ₹ crore; download Excel/CSV.",
                                                       "Ratios & DuPont: 25 ratios with formulas, DuPont decomposition and the Piotroski F-score.",
+                                                      "Quarterly results: latest quarter cards, QoQ and YoY growth, margins and a quarterly chart; missing quarters are flagged.",
                                                       "Data quality: balance-sheet checks, missing items, irregular periods, currency notes."]),
         "Valuation": ("views/valuation.py", ["Multiples: P/E, P/B, EV/EBITDA with history at each fiscal year-end.",
                                             "DCF: set CAPM inputs (risk-free rate, beta, ERP), operating assumptions and see every step from FCFF to value per share.",
@@ -64,7 +66,7 @@ with tab_mod:
                                                "See documents uploaded for this company."]),
         "Stock Screener": ("views/screener.py", ["Presets or custom min/max filters on quality, growth, leverage and valuation.",
                                                 "Missing data is excluded by default (toggle to keep).",
-                                                "Select rows to open, compare (2-5) or add to the watchlist; export CSV."]),
+                                                "Select rows to open, compare (2-5) or add to the watchlist; export CSV or formatted Excel."]),
         "Company Comparison": ("views/compare.py", ["Side-by-side table with ★ for the most favourable value; warnings when periods, bases or currencies differ.",
                                                     "Charts: returns, margins, revenue indexed to 100, 12-month price performance."]),
         "AI Research Assistant": ("views/assistant.py", ["Default engine is the free offline analyst - deterministic and fully sourced.",
@@ -111,6 +113,11 @@ with tab_faq:
         ("Does the AI cost money?", "The default offline analyst is free. The Claude API is optional and billed per use to your own Anthropic account (Claude Pro does not include API credits); costs are shown before you enable it. Ollama is free and runs locally."),
         ("Can the assistant tell me what to buy?", "No. It explains evidence and calculations. Issuing recommendations in India requires SEBI registration."),
         ("Where is my data stored?", f"In a local SQLite database ({config.DB_PATH.name}) in the project's data folder. API keys are never stored."),
+        ("Can data refresh automatically?", "Yes. Schedule `python -m equitypilot refresh` (or `--quotes-only` for a fast "
+         "update) with Windows Task Scheduler or cron. `python -m equitypilot status` shows what is cached."),
+        ("How are banks analysed?", "Banks use P/B, ROE and bank metrics (asset quality, capital, funding) instead of "
+         "debt/equity, EV/EBITDA and FCFF DCF. Enter bank metrics from the quarterly disclosure on Company Research. "
+         "'Epsilon Bank Ltd (Sample)' shows the workflow with fictional data."),
         ("How do I reset everything?", "Stop the app and delete the data folder's equitypilot.db file; sample data reloads on the next start."),
     ]
     for q, a in FAQ:
