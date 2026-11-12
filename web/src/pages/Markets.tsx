@@ -4,11 +4,14 @@ import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Sparkline } from '../components/charts'
 import { StockChart } from '../components/StockChart'
-import { Card, ChangePill, cx, DataBadge, EmptyState, Notice, PageHeader, Segmented } from '../components/ui'
+import { Card, ChangePill, cx, DataBadge, EmptyState, Notice, PageHeader, Segmented, Skeleton } from '../components/ui'
 import { api, type IndexRow, type MarketStatus } from '../lib/api'
 import { baseSymbol, inr, num, timeAgo } from '../lib/format'
 import { useQuoteStream } from '../lib/hooks'
 
+
+const INDEX_NAMES: Record<string, string> = { '^NSEI': 'NIFTY 50', '^BSESN': 'SENSEX', '^NSEBANK': 'NIFTY BANK', '^CNX100': 'NIFTY 100',
+  '^NSEMDCP50': 'NIFTY MIDCAP 50', '^INDIAVIX': 'INDIA VIX', '^CNXIT': 'NIFTY IT' }
 
 export default function Markets() {
   const [params, setParams] = useSearchParams()
@@ -29,6 +32,7 @@ export default function Markets() {
         actions={<span className={cx('inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold', stream.connected ? 'bg-up/10 text-up' : 'bg-slate-500/10 text-slate-500')}>
           {stream.connected ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}{stream.connected ? 'Stream connected' : 'Connecting…'}</span>} />
       <div className="scroll-row">
+        {ov.isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[84px] w-[170px] shrink-0 rounded-2xl" />)}
         {idx.map((i) => (
           <button key={i.symbol} onClick={() => setParams({ symbol: i.symbol })}
             className={cx('card w-[170px] shrink-0 p-3 text-left transition-colors', symbol === i.symbol ? 'border-brand-500 ring-2 ring-brand-500/20' : 'hover:border-brand-300')}>
@@ -40,8 +44,9 @@ export default function Markets() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title={current?.name ?? baseSymbol(symbol)} subtitle={current ? `As of ${current.as_of}` : undefined}>
-          <StockChart symbol={symbol} isIndex={symbol.startsWith('^')} defaultRange="1D" />
+        <Card className="xl:col-span-2" title={current?.name ?? INDEX_NAMES[symbol] ?? baseSymbol(symbol)}>
+          <StockChart symbol={symbol} isIndex={symbol.startsWith('^')} defaultRange="1D"
+            live={current ? { price: current.last, prev_close: current.prev ?? null, time: current.time ?? null } : null} />
         </Card>
 
         <Card title={<span className="inline-flex items-center gap-1.5"><Radio className="h-4 w-4 text-brand-600" />Quote board</span>}

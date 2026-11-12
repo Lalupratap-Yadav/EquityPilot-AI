@@ -157,7 +157,7 @@ export default function Company() {
               <Stat label="52-week range" value={<span className="text-sm">{inr(fq.week52_low, 0)} – {inr(fq.week52_high, 0)}</span>} />
             </div>
             <Insights m={m} isFin={d.is_financial} />
-            <ChartTab symbol={symbol} compact />
+            <ChartTab symbol={symbol} compact live={quote} />
           </div>
           <div className="space-y-5">
             <Card title="Business">
@@ -184,7 +184,7 @@ export default function Company() {
           </div>
         </div>
       )}
-      {tab === 'chart' && <ChartTab symbol={symbol} />}
+      {tab === 'chart' && <ChartTab symbol={symbol} live={quote} />}
       {tab === 'financials' && <FinancialsTab symbol={symbol} isFinancial={d.is_financial} />}
       {tab === 'quarterly' && <QuarterlyTab symbol={symbol} />}
       {tab === 'bank' && <BankTab symbol={symbol} sample={c.is_sample} />}

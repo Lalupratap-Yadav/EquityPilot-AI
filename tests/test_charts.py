@@ -106,3 +106,68 @@ def test_weekly_volatility_is_annualised_with_52(client, monkeypatch):
     d = client.get("/api/chart/%5EWEEK?range=MAX").json()
     expected = pd.Series(close).pct_change().dropna().std() * 52 ** 0.5
     assert d["stats"]["volatility"] == pytest.approx(expected)
+
+
+# ------------------------------------------------------------------ one source of truth for the latest price
+def test_merge_quote_appends_today_when_daily_row_is_missing():
+    """Regression: after midnight Yahoo's daily row for the last session is NaN, so tiles/charts showed the day before."""
+    bars = pd.DataFrame({"time": pd.to_datetime(["2026-11-10", "2026-11-11"]), "open": 1.0, "high": 101.0, "low": 99.0,
+                         "close": [100.0, 101.0], "volume": 5.0})
+    q = {"price": 102.5, "prev_close": 101.0, "time": "2026-11-12T09:59:00"}      # 15:29 IST on 12 Nov
+    out = RM._merge_quote(bars, q, intraday=False)
+    assert len(out) == 3 and out["time"].iloc[-1] == pd.Timestamp("2026-11-12") and out["close"].iloc[-1] == 102.5
+    same_day = RM._merge_quote(out, {**q, "price": 103.0}, intraday=False)
+    assert len(same_day) == 3 and same_day["close"].iloc[-1] == 103.0 and same_day["high"].iloc[-1] == 103.0
+    assert len(RM._merge_quote(bars, {**q, "time": "2026-11-09T09:59:00"}, intraday=False)) == 2   # older quote ignored
+
+
+def test_merge_quote_updates_weekly_bar_in_same_week():
+    bars = pd.DataFrame({"time": pd.to_datetime(["2026-10-26", "2026-11-02", "2026-11-09"]), "open": 1.0, "high": 1.0,
+                         "low": 1.0, "close": [1.0, 2.0, 3.0], "volume": 1.0})
+    out = RM._merge_quote(bars, {"price": 4.0, "time": "2026-11-12T09:59:00"}, intraday=False)
+    assert len(out) == 3 and out["close"].iloc[-1] == 4.0
+
+
+def test_merge_quote_intraday_same_session_only():
+    t = pd.date_range("2026-11-12 03:45", periods=3, freq="5min")
+    bars = pd.DataFrame({"time": t, "open": 1.0, "high": 2.0, "low": 0.5, "close": [1.0, 1.5, 1.8], "volume": 1.0})
+    out = RM._merge_quote(bars, {"price": 1.9, "time": "2026-11-12T03:57:00"}, intraday=True)
+    assert out["close"].iloc[-1] == 1.9 and len(out) == 3
+    assert RM._merge_quote(bars, {"price": 9.0, "time": "2026-11-13T04:00:00"}, intraday=True)["close"].iloc[-1] == 1.8
+
+
+def test_index_tiles_use_the_shared_quote(monkeypatch):
+    """Tiles take last/prev from the same quote cache as the charts; daily history only draws the sparkline."""
+    monkeypatch.setattr(M.config, "OFFLINE", False)
+    monkeypatch.setattr(M, "_IDX_CACHE", {"t": 0.0, "data": []})
+    hist = {"^BSESN": {"dates": ["2026-11-09", "2026-11-11"], "closes": [81106.65, 81879.40]}}
+    monkeypatch.setattr(M, "_index_history", lambda ttl=900: hist)
+    monkeypatch.setattr(M.QUOTES, "get", lambda syms, stale_ok=False: {
+        "^BSESN": {"price": 81911.01, "prev_close": 81879.40, "time": "2026-11-12T09:59:00", "status": "close"}})
+    tiles = {t["symbol"]: t for t in M.index_overview()}
+    s = tiles["^BSESN"]
+    assert s["last"] == 81911.01 and s["as_of"] == "2026-11-12"
+    assert s["change_pct"] == pytest.approx(81911.01 / 81879.40 - 1)
+    assert s["spark"][-1] == 81911.01 and len(s["spark"]) == 3
+
+
+def test_bad_tick_filter_removes_spike_and_keeps_real_moves():
+    # 75 five-minute bars of normal noise (as on a real 1D chart) with one closing-session glitch at bar 70
+    rng = np.random.default_rng(1)
+    close = list(100 * np.cumprod(1 + rng.normal(0, 0.0004, 75)))
+    good = close[70]
+    close[70] = close[69] * 0.991                                                 # jumps 0.9% away ...
+    close[71] = close[69] * 1.0005                                                # ... and straight back
+    t = pd.date_range("2026-11-12 03:45", periods=75, freq="5min")
+    bars = pd.DataFrame({"time": t, "open": close, "high": [c * 1.0003 for c in close], "low": [c * 0.9997 for c in close],
+                         "close": close, "volume": 0.0})
+    bars.loc[70, "low"] = close[69] * 0.98                                        # bogus wick on the spike bar
+    bars.loc[71, "open"] = close[70]                                              # next bar opens at the glitch
+    out, n = M.clean_intraday(bars)
+    assert len(out) == 74 and close[70] not in out["close"].tolist() and n >= 1 and good != close[70]
+    assert out["low"].min() > close[69] * 0.995
+    assert out["close"].iloc[-1] == close[-1]                                     # latest value never altered
+    # a genuine sustained move (no reversal) is kept untouched
+    trend = list(close[:60]) + [close[59] * (1 + 0.01 * k) for k in range(1, 16)]
+    out2, n2 = M.clean_intraday(bars.assign(close=trend, open=trend, high=[c * 1.0003 for c in trend], low=[c * 0.9997 for c in trend]))
+    assert len(out2) == 75 and n2 == 0

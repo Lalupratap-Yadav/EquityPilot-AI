@@ -238,6 +238,53 @@ def get_actions(symbol: str, since=None) -> pd.DataFrame:
     return db.read_df(stmt.order_by(db.corporate_actions.c.date))
 
 
+# ------------------------------------------------------------------ bad-tick filter
+def clean_intraday(bars: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Remove obvious provider glitches from intraday bars and report how many bars were touched.
+
+    A bar is a *spike* when its close jumps away from the previous close and straight back on the next bar, each
+    move far larger than normal for this series (8x the median 5-minute move, at least 0.35%). Such bars are dropped,
+    not replaced. On the remaining bars an open that sits far from both the previous close and its own close is reset
+    to the previous close, and wicks are capped to that move threshold around the bar's open/close/previous close.
+    Seen in practice on Yahoo index data during the 15:20-15:30 closing-price window (e.g. SENSEX 12 Nov 2026).
+    Daily data is never altered."""
+    if bars is None or len(bars) < 5:
+        return bars, 0
+    b = bars.reset_index(drop=True).copy()
+    c = b["close"].astype(float)
+    r = c.pct_change()
+    med = float(r.abs().median()) if r.notna().any() else 0.0
+    thr = max(8 * med, 0.0035)
+    drop = []
+    for i in range(1, len(b) - 1):
+        r1, r2 = r.iloc[i], c.iloc[i + 1] / c.iloc[i] - 1
+        if abs(r1) > thr and abs(r2) > thr and (r1 > 0) != (r2 > 0):
+            drop.append(i)
+    touched = len(drop)
+    after_spike = {i - k for k, i in enumerate(drop)}          # positions of the bars that followed a dropped spike
+    if drop:
+        b = b.drop(index=drop).reset_index(drop=True)
+    prev = b["close"].shift(1)
+    for i in range(1, len(b)):
+        o, cl, pc = float(b.at[i, "open"]), float(b.at[i, "close"]), float(prev.iloc[i])
+        changed = False
+        near = i in after_spike
+        if near and abs(o / pc - 1) > thr and abs(o / cl - 1) > thr:
+            o = pc
+            b.at[i, "open"] = o
+            changed = True
+        w = thr if near else 4 * thr                            # elsewhere only cap extreme wicks
+        lo_ref, hi_ref = min(o, cl, pc) * (1 - w), max(o, cl, pc) * (1 + w)
+        if float(b.at[i, "low"]) < lo_ref:
+            b.at[i, "low"] = min(o, cl)
+            changed = True
+        if float(b.at[i, "high"]) > hi_ref:
+            b.at[i, "high"] = max(o, cl)
+            changed = True
+        touched += changed
+    return b, touched
+
+
 # ------------------------------------------------------------------ indices
 BROAD_INDICES = {"^NSEI": "NIFTY 50", "^BSESN": "SENSEX", "^NSEBANK": "NIFTY BANK", "^CNX100": "NIFTY 100",
                  "^NSEMDCP50": "NIFTY MIDCAP 50", "^INDIAVIX": "INDIA VIX"}
@@ -249,34 +296,73 @@ SECTOR_INDICES = {"^CNXIT": ("NIFTY IT", "it"), "^CNXAUTO": ("NIFTY AUTO", "auto
                   "^CNXCONSUM": ("NIFTY CONSUMPTION", "consumer-durables")}
 
 _IDX_CACHE: dict = {"t": 0.0, "data": []}
+_IDX_HIST: dict = {"t": 0.0, "data": {}}
 
 
-def index_overview(ttl: float = 120) -> list[dict]:
-    """Last value, change and 1-month sparkline for broad and sectoral indices (DELAYED, Yahoo)."""
-    if time.time() - _IDX_CACHE["t"] < ttl and _IDX_CACHE["data"]:
-        return _IDX_CACHE["data"]
-    if config.OFFLINE:
-        return []
+def ist_date(iso_utc: str | None) -> str | None:
+    """IST calendar date of a naive-UTC ISO timestamp."""
+    if not iso_utc:
+        return None
+    return (pd.Timestamp(iso_utc) + pd.Timedelta(hours=5, minutes=30)).date().isoformat()
+
+
+def _index_history(ttl: float = 900) -> dict[str, dict]:
+    """1-month daily closes per index, used only for the sparkline (cached 15 min)."""
+    if time.time() - _IDX_HIST["t"] < ttl and _IDX_HIST["data"]:
+        return _IDX_HIST["data"]
     import yfinance as yf
     syms = list(BROAD_INDICES) + list(SECTOR_INDICES)
     try:
         d = yf.download(syms, period="1mo", interval="1d", group_by="ticker", progress=False, auto_adjust=False, timeout=20)
     except Exception as exc:
-        log.warning("index download failed: %s", exc)
-        return _IDX_CACHE["data"]
-    out = []
+        log.warning("index history download failed: %s", exc)
+        return _IDX_HIST["data"]
+    out = {}
     for s in syms:
         try:
-            c = d[s]["Close"].dropna()
+            c = d[s]["Close"].dropna()     # the current day's row can be NaN until Yahoo finalises it
         except KeyError:
             continue
-        if len(c) < 2:
-            continue
-        last, prev = float(c.iloc[-1]), float(c.iloc[-2])
+        if len(c):
+            out[s] = {"dates": [pd.Timestamp(x).date().isoformat() for x in c.index], "closes": [float(x) for x in c.tolist()]}
+    _IDX_HIST.update(t=time.time(), data=out)
+    return out
+
+
+def index_overview(ttl: float = 60) -> list[dict]:
+    """Latest value, change and 1-month sparkline for broad and sectoral indices (DELAYED, Yahoo).
+
+    Latest value and previous close come from the shared quote cache - the same numbers the price charts,
+    the company header and the quote board use - so a tile and the chart for the same index always agree.
+    The daily history only draws the sparkline (today's value is appended when the daily row is not final yet)."""
+    if time.time() - _IDX_CACHE["t"] < ttl and _IDX_CACHE["data"]:
+        return _IDX_CACHE["data"]
+    if config.OFFLINE:
+        return []
+    syms = list(BROAD_INDICES) + list(SECTOR_INDICES)
+    hist = _index_history()
+    quotes = QUOTES.get(syms)
+    out = []
+    for s in syms:
+        h = hist.get(s) or {"dates": [], "closes": []}
+        q = quotes.get(s) or {}
+        price, prev = q.get("price"), q.get("prev_close")
+        as_of = ist_date(q.get("time"))
+        if price is None or prev is None:            # quote unavailable: fall back to the last two final daily closes
+            if len(h["closes"]) < 2:
+                continue
+            price, prev, as_of = h["closes"][-1], h["closes"][-2], h["dates"][-1]
+        spark = list(h["closes"])
+        if as_of and (not h["dates"] or as_of > h["dates"][-1]):
+            spark.append(price)
+        elif spark:
+            spark[-1] = price
         name, industry = (BROAD_INDICES[s], None) if s in BROAD_INDICES else SECTOR_INDICES[s]
         out.append({"symbol": s, "name": name, "kind": "broad" if s in BROAD_INDICES else "sector", "industry": industry,
-                    "last": last, "prev": prev, "change": last - prev, "change_pct": last / prev - 1,
-                    "month_change_pct": last / float(c.iloc[0]) - 1, "as_of": pd.Timestamp(c.index[-1]).date().isoformat(),
-                    "spark": [float(x) for x in c.tolist()], "status": "delayed", "source": "Yahoo Finance (via yfinance)"})
-    _IDX_CACHE.update(t=time.time(), data=out)
+                    "last": price, "prev": prev, "change": price - prev, "change_pct": price / prev - 1 if prev else None,
+                    "month_change_pct": price / spark[0] - 1 if spark and spark[0] else None, "as_of": as_of,
+                    "time": q.get("time"), "spark": spark, "status": q.get("status") or "delayed",
+                    "source": "Yahoo Finance (via yfinance)"})
+    if out:
+        _IDX_CACHE.update(t=time.time(), data=out)
     return out

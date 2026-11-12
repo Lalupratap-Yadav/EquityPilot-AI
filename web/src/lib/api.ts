@@ -59,6 +59,8 @@ export interface IndexRow {
   kind: 'broad' | 'sector'
   industry: string | null
   last: number
+  prev?: number | null
+  time?: string | null
   change: number
   change_pct: number
   month_change_pct: number

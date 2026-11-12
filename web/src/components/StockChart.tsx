@@ -32,8 +32,12 @@ interface ChartBar { time: string; open: number; high: number; low: number; clos
 interface ChartResp {
   bars: ChartBar[]; indicators: Record<string, (number | null)[]>; status: string; source: string; intraday: boolean
   has_volume?: boolean; baseline?: { value: number; label: string }; change?: { abs: number; pct: number | null }; session_date?: string
+  quote?: { price: number | null; prev_close: number | null; time: string | null; status: string } | null; cleaned?: number
   stats?: { return: number; high: number; low: number; max_drawdown: number; volatility: number | null }
 }
+/** The latest quote already shown elsewhere on the page (index tile, company header). The chart header uses it
+ *  so both numbers are always identical, even between refreshes. */
+export interface LiveQuote { price: number | null; prev_close: number | null; time: string | null }
 type Style = 'line' | 'candles' | 'area'
 type Overlay = 'sma20' | 'sma50' | 'sma200' | 'ema20' | 'bb'
 type Pane = 'rsi' | 'macd'
@@ -182,10 +186,17 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
     if (mode === 'simple' || style === 'area') {
       s.applyOptions({ lineColor: color, topColor: color + '38', bottomColor: color + '03' })
     }
+    const pad: { time: Time }[] = []
+    if (range === '1D' && data.intraday) {
+      const lastT = t(data.bars[data.bars.length - 1]) as number
+      const day = new Date(lastT * 1000)
+      const close = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 15, 30) / 1000   // 15:30 IST on the shifted axis
+      for (let x = lastT + 300; x <= close; x += 300) pad.push({ time: x as UTCTimestamp })
+    }
     if (mode === 'advanced' && style === 'candles') {
-      s.setData(data.bars.map((b) => ({ time: t(b), open: b.open, high: b.high, low: b.low, close: b.close })))
+      s.setData([...data.bars.map((b) => ({ time: t(b), open: b.open, high: b.high, low: b.low, close: b.close })), ...pad])
     } else {
-      s.setData(data.bars.map((b) => ({ time: t(b), value: b.close })))
+      s.setData([...data.bars.map((b) => ({ time: t(b), value: b.close })), ...pad])
     }
     if (refLine.current) s.removePriceLine(refLine.current)
     refLine.current = s.createPriceLine({ price: base, color: c.ref, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true,
@@ -260,8 +271,8 @@ function Explainer({ mode, range, isIndex }: { mode: 'simple' | 'advanced'; rang
 }
 
 // ------------------------------------------------------------------ public component
-export function StockChart({ symbol, isIndex = false, compact = false, defaultRange = '1Y', height, fullLink }: {
-  symbol: string; isIndex?: boolean; compact?: boolean; defaultRange?: Range; height?: number; fullLink?: string
+export function StockChart({ symbol, isIndex = false, compact = false, defaultRange = '1Y', height, fullLink, live }: {
+  symbol: string; isIndex?: boolean; compact?: boolean; defaultRange?: Range; height?: number; fullLink?: string; live?: LiveQuote | null
 }) {
   const [range, setRange] = useState<Range>(defaultRange)
   const [mode, setMode] = useStored<'simple' | 'advanced'>('ep-chart-mode', 'simple')
@@ -278,7 +289,17 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
     refetchInterval: range === '1D' ? 120_000 : false,
     queryFn: () => api.get<ChartResp>(`/chart/${encodeURIComponent(symbol)}?range=${range}`),
   })
-  const d = q.data
+  const raw = q.data
+  // if the page holds a newer quote than the chart response, end the chart on it (same number as the tile/header)
+  const d = useMemo(() => {
+    if (!raw?.bars.length || !live || live.price == null || !live.time) return raw
+    if (raw.quote?.time && live.time <= raw.quote.time) return raw
+    const bars = raw.bars.slice()
+    const lb = bars[bars.length - 1]
+    bars[bars.length - 1] = { ...lb, close: live.price, high: Math.max(lb.high, live.price), low: Math.min(lb.low, live.price) }
+    const baseline = range === '1D' && raw.intraday && live.prev_close ? { value: live.prev_close, label: 'Previous close' } : raw.baseline
+    return { ...raw, bars, baseline }
+  }, [raw, live?.price, live?.prev_close, live?.time, range]) // eslint-disable-line react-hooks/exhaustive-deps
   const showVolume = !!d?.has_volume && !isIndex && (effMode === 'advanced' ? advVolume : simpleVolume && !compact)
   const h = height ?? (compact ? 260 : 380)
   const onHover = useCallback((x: Hover | null) => setHover(x), [])
@@ -389,11 +410,20 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
 
       {/* period statistics */}
       {!compact && d?.stats && (
-        <div className={cx('mt-4 grid grid-cols-2 gap-3', isNum(d.stats.volatility) ? 'md:grid-cols-4' : 'md:grid-cols-3')}>
-          <Stat label="Period high" value={fmt(d.stats.high)} help="Highest traded value in the selected period" />
-          <Stat label="Period low" value={fmt(d.stats.low)} help="Lowest traded value in the selected period" />
-          <Stat label="Largest fall" value={pct(d.stats.max_drawdown)} help="Biggest drop from a peak to a later low within the period (maximum drawdown)" />
-          {isNum(d.stats.volatility) && <Stat label="Volatility (yearly)" value={pct(d.stats.volatility)} help="How much daily returns swing, scaled to a year (standard deviation × √252). Shown for ranges of 3 months or more." />}
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {range === '1D' && d.intraday ? (<>
+            <Stat label="Open" value={fmt(d.bars[0].open)} help="First traded value of the session (09:15 IST)" />
+            <Stat label="Previous close" value={fmt(d.baseline?.value)} help="Closing value of the previous trading day - today's change is measured from it" />
+            <Stat label="Day high" value={fmt(d.stats.high)} help="Highest value traded today (from 5-minute bars)" />
+            <Stat label="Day low" value={fmt(d.stats.low)} help="Lowest value traded today (from 5-minute bars)" />
+          </>) : (<>
+            <Stat label="Period high" value={fmt(d.stats.high)} help="Highest traded value in the selected period" />
+            <Stat label="Period low" value={fmt(d.stats.low)} help="Lowest traded value in the selected period" />
+            <Stat label="Largest fall" value={pct(d.stats.max_drawdown)} help="Biggest drop from a peak to a later low within the period (maximum drawdown)" />
+            {isNum(d.stats.volatility)
+              ? <Stat label="Volatility (yearly)" value={pct(d.stats.volatility)} help="How much returns swing, scaled to a year (standard deviation of daily returns × √252, or weekly × √52 on 'All')." />
+              : <Stat label="Start of period" value={fmt(d.baseline?.value ?? d.bars[0].close)} help="Value at the start of the selected period - the change at the top is measured from it" />}
+          </>)}
         </div>
       )}
 
@@ -403,6 +433,7 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
         <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs muted">
           <span><b className="font-medium">Source:</b> {d.source}</span><DataBadge type={d.status} />
           <span>{d.intraday ? `${BAR_TEXT[range]} bars, delayed.` : `${BAR_TEXT[range] === '1 week' ? 'Weekly' : 'Daily'} closing prices${isIndex ? '' : ', not adjusted for dividends'}.`}</span>
+          {d.cleaned ? <span title="A bar whose price jumped away and straight back far beyond normal moves (typically a closing-session artefact in the provider's data) was removed or its wick capped. Nothing else is altered.">{d.cleaned} bad tick{d.cleaned === 1 ? '' : 's'} from the provider filtered.</span> : null}
           <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer" className="hover:underline">Charts by TradingView</a>
         </p>
       )}

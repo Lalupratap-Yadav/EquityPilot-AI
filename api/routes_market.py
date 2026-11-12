@@ -118,10 +118,40 @@ def _bars_cached(symbol: str, rng: str) -> pd.DataFrame:
     return df
 
 
-def _previous_close(symbol: str, session_date: str) -> float | None:
+def _merge_quote(bars: pd.DataFrame, quote: dict | None, intraday: bool) -> pd.DataFrame:
+    """Make the chart end at the same latest price the quote tiles show.
+
+    Intraday: if the quote is newer than the last bar of the same session, the last bar's close becomes the quote.
+    Daily/weekly: Yahoo's row for the current day is often missing or NaN until it is finalised, so a newer quote is
+    appended as today's point (or updates the current week's bar)."""
+    if bars.empty or not quote or quote.get("price") is None or not quote.get("time"):
+        return bars
+    price, qt = float(quote["price"]), pd.Timestamp(quote["time"])
+    bars = bars.copy()
+    bars["time"] = pd.to_datetime(bars["time"])
+    last_t = bars["time"].iloc[-1]
+    i = bars.index[-1]
+    if intraday:
+        ist = pd.Timedelta(hours=5, minutes=30)
+        if qt >= last_t and (qt + ist).date() == (last_t + ist).date() and qt - last_t < pd.Timedelta(hours=1):
+            bars.loc[i, ["close", "high", "low"]] = [price, max(bars.at[i, "high"], price), min(bars.at[i, "low"], price)]
+        return bars
+    qd = (qt + pd.Timedelta(hours=5, minutes=30)).normalize()
+    spacing = bars["time"].diff().dt.days.median() if len(bars) > 2 else 1
+    if qd < last_t:
+        return bars
+    if qd == last_t or (spacing and spacing >= 5 and (qd - last_t).days < 7):
+        bars.loc[i, ["close", "high", "low"]] = [price, max(bars.at[i, "high"], price), min(bars.at[i, "low"], price)]
+    else:
+        bars = pd.concat([bars, pd.DataFrame([{"time": qd, "open": price, "high": price, "low": price, "close": price,
+                                               "volume": None}])], ignore_index=True)
+    return bars
+
+
+def _previous_close(symbol: str, session_date: str, quote: dict | None = None) -> float | None:
     """Close of the last trading day before the session shown on a 1D chart (exchange convention for 'today's change')."""
-    q = M.QUOTES.get([symbol], stale_ok=True).get(symbol) or {}
-    if q.get("prev_close") and q.get("time") and str(q["time"])[:10] >= session_date[:10]:
+    q = quote or M.QUOTES.get([symbol], stale_ok=True).get(symbol) or {}
+    if q.get("prev_close") and q.get("time") and M.ist_date(q["time"]) == session_date:
         return float(q["prev_close"])
     try:
         daily = _bars_cached(symbol, "3M")
@@ -145,6 +175,8 @@ def chart(symbol: str, request: Request, range: str = Query("1Y", pattern="^(1D|
           indicators: bool = True):
     LIMITER.check(request, "chart", 60, 60)
     intraday = range in ("1D", "1W", "5D", "1M")
+    out_quote = None
+    live = None
     if symbol.startswith("SAMPLE-"):
         bars = _daily_slice(repo.get_prices(symbol, auto_refresh=False), "1W" if range == "1D" else range)
         intraday = False                      # sample data is daily only
@@ -163,11 +195,24 @@ def chart(symbol: str, request: Request, range: str = Query("1Y", pattern="^(1D|
         else:
             status = "delayed" if range in ("1D", "1W", "5D") else "historical"
             source = M.provider().name
+            # one source of truth for the latest price: the shared quote cache used by tiles and headers
+            try:
+                live = M.QUOTES.get([symbol]).get(symbol)
+            except Exception as exc:
+                log.warning("quote for chart failed %s: %s", symbol, exc)
+                live = None
+            if live and live.get("price") is not None:
+                bars = _merge_quote(bars, live, intraday)
+                out_quote = {k: live.get(k) for k in ("price", "prev_close", "change", "change_pct", "time", "status")}
     out = {"symbol": symbol, "range": range, "status": status, "source": source, "bars": [], "indicators": {},
-           "intraday": intraday, "range_label": _RANGE_LABEL.get(range, range)}
+           "intraday": intraday, "range_label": _RANGE_LABEL.get(range, range), "quote": out_quote}
     if bars is None or bars.empty:
         return out
     bars = bars.reset_index(drop=True)
+    if intraday and status != "sample":
+        bars, fixed = M.clean_intraday(bars)
+        if fixed:
+            out["cleaned"] = fixed
     tt = pd.to_datetime(bars["time"])
     # intraday: ISO UTC timestamp (the browser shifts to IST); daily and longer: the IST calendar date
     bars["time"] = tt.dt.strftime("%Y-%m-%dT%H:%M:%S") if intraday else tt.dt.strftime("%Y-%m-%d")
@@ -178,7 +223,7 @@ def chart(symbol: str, request: Request, range: str = Query("1Y", pattern="^(1D|
     baseline = {"value": first_close, "label": "Start of period"}
     if range == "1D" and intraday:
         out["session_date"] = str((tt.iloc[-1] + pd.Timedelta(hours=5, minutes=30)).date())
-        prev = _previous_close(symbol, out["session_date"])
+        prev = _previous_close(symbol, out["session_date"], live)
         if prev:
             baseline = {"value": prev, "label": "Previous close"}
     out["baseline"] = baseline

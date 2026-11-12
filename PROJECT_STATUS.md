@@ -1,5 +1,15 @@
 # EquityPilot AI – Project Status
 
+## v2.3 PRICE CONSISTENCY – complete (13 Nov 2026)
+| Item | State |
+|---|---|
+| Index tiles, chart header and chart last point use one quote source | ✅ live check: 17/17 indices + 3 companies identical (value and 1D %) |
+| Stale daily row after midnight no longer shows the previous day | ✅ regression tests |
+| Provider bad-tick filter (disclosed on the chart) | ✅ tested; on live data it touched only SENSEX and VIX closing-window spikes |
+| Regression tour of all 20 routes at 1440 px | ✅ no console errors, overflow or NaN text |
+
+Tests: **187 passing**.
+
 ## v2.2 PRICE CHARTS – complete (12 Nov 2026)
 | Item | State |
 |---|---|

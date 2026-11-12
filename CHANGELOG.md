@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.3.0] – 13 Nov 2026 – One source of truth for prices
+### Fixed
+- **Index tiles and charts showed different numbers** (e.g. SENSEX tile 81,879.40 +0.95% "as of 11 Nov" against the chart's 81,911.01 +0.04%). After midnight Yahoo's daily row for the last session has an empty close until it is finalised. The tiles dropped that row and showed the day before, while the chart used intraday data.
+  - Tiles now take the latest value and previous close from the shared quote cache, the same one the charts, company headers and quote board use.
+  - The daily history is used only for the sparkline, with today's value appended.
+- **Charts end on the same price as the tiles.** The chart endpoint merges the shared quote into its last point: it updates the current intraday bar, appends today's point when the daily row is missing, or updates the current weekly bar. The page also passes the quote it already shows into the chart header, so the two numbers are identical even between refreshes.
+- **Bad ticks from the provider** (seen on SENSEX and INDIA VIX in the 15:20–15:30 closing-price window: a 0.9% drop and recovery within 5 minutes):
+  - Bars that jump away and straight back by far more than normal are removed.
+  - The bar after such a spike has its open and wick corrected, and only extreme wicks are capped elsewhere.
+  - The latest value and daily data are never altered, and the chart footer states how many bars were filtered.
+
+### Improved
+- **1D chart:** the time axis spans the whole session, 09:15–15:30, as on Groww and Kite. The cards show Open, Previous close, Day high and Day low.
+- **Other ranges** always show four cards: period high, period low, largest fall, and yearly volatility or the start-of-period value.
+- **Market Tracker:** skeleton tiles while loading, the index name shown instead of the raw symbol, and the "As of" subtitle removed (the chart header shows the session).
+- Long index names on the Home tiles are truncated instead of wrapping.
+
+### Tests
+- 5 new tests: merging a quote into daily, weekly and intraday bars; index tiles using the shared quote; and the bad-tick filter, which removes a spike but keeps a genuine sustained move.
+- Live check: all 17 index tiles matched their 1D and 1Y chart values and 1D change exactly, as did the headers and charts for TCS, RELIANCE and HDFCBANK.
+
 ## [2.2.0] – 12 Nov 2026 – Price charts rebuilt
 ### Fixed
 - **Daily charts were one day early for every company and index.** Daily bars were converted to UTC (IST midnight is 18:30 UTC the day before) and then cut to a date, so a 12 Nov close was plotted on 11 Nov. Daily and weekly bars now carry the exchange (IST) date, and intraday bars stay UTC and are shown in IST.

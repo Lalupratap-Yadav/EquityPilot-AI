@@ -68,7 +68,7 @@ export default function Home() {
           {ov.isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)}
           {broad.map((i) => (
             <Link key={i.symbol} to={`/markets?symbol=${encodeURIComponent(i.symbol)}`} className="card p-3.5 transition-colors hover:border-brand-300">
-              <div className="flex items-center justify-between"><span className="text-xs font-semibold muted">{i.name}</span><DataBadge type={ov.data?.status.open ? 'delayed' : 'close'} /></div>
+              <div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs font-semibold muted" title={i.name}>{i.name}</span><DataBadge className="shrink-0" type={ov.data?.status.open ? 'delayed' : 'close'} /></div>
               <div className="num mt-1 text-lg font-semibold">{num(i.last, 2)}</div>
               <div className="flex items-end justify-between">
                 <ChangePill value={i.symbol === '^INDIAVIX' ? null : i.change_pct} />{i.symbol === '^INDIAVIX' && <span className="text-xs muted">{pct(i.change_pct, 2, true)}</span>}

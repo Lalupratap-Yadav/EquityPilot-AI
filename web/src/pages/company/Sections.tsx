@@ -3,7 +3,7 @@ import { ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BarsChart, Donut, LinesChart } from '../../components/charts'
-import { StockChart } from '../../components/StockChart'
+import { StockChart, type LiveQuote } from '../../components/StockChart'
 import { DataTable, type Column } from '../../components/common'
 import { Card, ChangePill, cx, DataBadge, EmptyState, Loading, Notice, SourceNote, Stat, TierBadge, useToast } from '../../components/ui'
 import { api } from '../../lib/api'
@@ -11,10 +11,10 @@ import { baseSymbol, crore, inr, isNum, mult, num, pct, timeAgo } from '../../li
 import { useInvalidate } from '../../lib/hooks'
 
 // ------------------------------------------------------------------ chart
-export function ChartTab({ symbol, compact }: { symbol: string; compact?: boolean }) {
+export function ChartTab({ symbol, compact, live }: { symbol: string; compact?: boolean; live?: LiveQuote | null }) {
   return (
     <Card title={compact ? 'Price' : undefined}>
-      <StockChart symbol={symbol} compact={compact} fullLink={compact ? `/company/${encodeURIComponent(symbol)}?tab=chart` : undefined} />
+      <StockChart symbol={symbol} compact={compact} live={live} fullLink={compact ? `/company/${encodeURIComponent(symbol)}?tab=chart` : undefined} />
     </Card>
   )
 }
