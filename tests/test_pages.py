@@ -44,7 +44,7 @@ def test_valuation_dcf_produces_value():
     at = run_page("views/valuation.py", "SAMPLE-ALPHA")
     assert not at.exception
     html = " ".join(h.proto.body for h in at.get("html"))
-    assert "Intrinsic value / share" in html and "EV → equity bridge" in html
+    assert "Estimated value / share (model)" in html and "EV → equity bridge" in html
 
 
 def test_financials_tables_present():

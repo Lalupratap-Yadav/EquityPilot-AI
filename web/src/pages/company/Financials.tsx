@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { BarsChart, LinesChart } from '../../components/charts'
-import { Card, cx, DataBadge, EmptyState, InfoTip, Loading, Notice, Segmented, SourceNote } from '../../components/ui'
+import { AssessChip, ExplainLabel, type Assessment, type GuideEntry } from '../../components/Explain'
+import { Card, cx, DataBadge, EmptyState, Loading, Notice, Segmented, SourceNote } from '../../components/ui'
 import { api } from '../../lib/api'
 import { byKind, isNum, num, pct } from '../../lib/format'
 
 interface Row { key: string; label: string; values: (number | null)[] }
-interface Ratio { key: string; label: string; category: string; formula: string; kind: string; help: string; values: (number | null)[] }
+interface Ratio { key: string; label: string; category: string; formula: string; kind: string; help: string; values: (number | null)[]; guide?: GuideEntry | null; assessment?: Assessment | null }
 interface Fin {
   empty?: boolean; bases?: string[]
   periods: string[]; labels: string[]; basis: string; currency: string; unit: string; divisor: number
@@ -14,6 +15,44 @@ interface Fin {
   dupont: Record<string, Record<string, number | null>>; piotroski: { score: number | null; tests: [string, boolean | null][] }
   cagr: Record<string, { '3y': number | null; all: number | null }>
   quality: { level: string; check: string; detail: string }[]; sources: string[]; data_types: string[]; fetched_at: string
+  benchmark_note?: string; is_financial?: boolean
+}
+
+const HEALTH = ['roe', 'roce', 'revenue_growth', 'net_income_growth', 'debt_to_equity', 'interest_coverage', 'cfo_to_net_income', 'current_ratio']
+const HEALTH_FIN = ['roe', 'roa', 'revenue_growth', 'net_income_growth']
+const latest = (vals: (number | null)[]) => [...vals].reverse().find(isNum) ?? null
+/** Chart-friendly series in display units (percentages as %, not fractions). */
+function ratioHistory(r: Ratio, labels: string[]) {
+  const scale = r.kind === 'pct' ? 100 : 1
+  return labels.map((l, i) => ({ label: l, value: isNum(r.values[i]) ? r.values[i]! * scale : null }))
+}
+function ratioFmt(kind: string) {
+  return (v: number) => kind === 'pct' ? `${v.toFixed(1)}%` : kind === 'x' ? `${v.toFixed(1)}x` : kind === 'days' ? `${v.toFixed(0)} d` : kind === 'inr' ? `₹${v.toFixed(1)}` : v.toFixed(2)
+}
+
+function RatioLabel({ r, labels }: { r: Ratio; labels: string[] }) {
+  return <ExplainLabel metric={r.key} label={r.label} value={byKind(latest(r.values), r.kind)} assessment={r.assessment} formula={r.formula}
+    history={ratioHistory(r, labels)} fmt={ratioFmt(r.kind)} />
+}
+
+function HealthSummary({ d }: { d: Fin }) {
+  const keys = d.is_financial ? HEALTH_FIN : HEALTH
+  const rows = keys.map((k) => d.ratios.find((r) => r.key === k)).filter((r): r is Ratio => !!r)
+  if (!rows.length) return null
+  return (
+    <Card title="Financial health at a glance" subtitle="Latest fiscal year. Click any metric for a plain-English explanation and its history.">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {rows.map((r) => (
+          <div key={r.key} className="rounded-xl border border-slate-200 p-3 dark:border-ink-700">
+            <div className="flex items-start justify-between gap-2 text-xs font-medium muted"><RatioLabel r={r} labels={d.labels} /><AssessChip a={r.assessment} /></div>
+            <div className="num mt-1 text-lg font-semibold">{byKind(latest(r.values), r.kind)}</div>
+            <p className="mt-0.5 text-xs leading-snug text-slate-600 dark:text-slate-300">{r.assessment?.text ?? (isNum(latest(r.values)) ? 'No single benchmark applies - compare with peers and history.' : 'Data not available.')}</p>
+          </div>
+        ))}
+      </div>
+      {d.benchmark_note && <p className="mt-3 text-xs muted">{d.benchmark_note}</p>}
+    </Card>
+  )
 }
 
 const BOLD = new Set(['revenue', 'ebitda', 'ebit', 'net_income', 'total_assets', 'total_equity', 'cfo', 'fcf'])
@@ -87,17 +126,18 @@ export default function FinancialsTab({ symbol, isFinancial }: { symbol: string;
         </Card>
       ) : (
         <div className="space-y-4">
-          {period === 'quarterly' && <Notice tone="warn">Quarterly ratios use quarterly flows against period-end balances (not annualised).</Notice>}
+          {period === 'quarterly' ? <Notice tone="warn">Quarterly ratios use quarterly flows against period-end balances (not annualised), so they are not rated against benchmarks.</Notice> : <HealthSummary d={d} />}
           {categories.map((cat) => (
             <Card key={cat} title={cat} pad={false}>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-max text-sm">
-                  <thead><tr><th className="table-head px-4 py-2">Ratio</th>{d.labels.map((l) => <th key={l} className="table-head px-4 py-2 text-right">{l}</th>)}</tr></thead>
+                  <thead><tr><th className="table-head px-4 py-2">Ratio</th>{d.labels.map((l) => <th key={l} className="table-head px-4 py-2 text-right">{l}</th>)}{period === 'annual' && <th className="table-head px-4 py-2 text-right">Rating</th>}</tr></thead>
                   <tbody>
                     {d.ratios.filter((r) => r.category === cat).map((r) => (
                       <tr key={r.key} className="border-t border-slate-100 dark:border-ink-700/70">
-                        <td className="px-4 py-2"><span className="inline-flex items-center gap-1">{r.label}<InfoTip text={`${r.formula}. ${r.help}`} /></span></td>
+                        <td className="px-4 py-2"><RatioLabel r={r} labels={d.labels} /></td>
                         {r.values.map((v, i) => <td key={i} className={cx('num px-4 py-2 text-right', isNum(v) && v < 0 && 'text-down')}>{byKind(v, r.kind)}</td>)}
+                        {period === 'annual' && <td className="px-4 py-2 text-right">{r.assessment ? <AssessChip a={r.assessment} /> : <span className="text-xs muted">—</span>}</td>}
                       </tr>
                     ))}
                   </tbody>

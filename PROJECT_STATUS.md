@@ -1,5 +1,22 @@
 # EquityPilot AI – Project Status
 
+## v2.1 RESEARCH DEPTH & TRUST – complete (12 Nov 2026)
+Built in response to the "professional financial intelligence platform" brief. An audit against its 17 sections showed most items already existed in v2; this release fills the gaps listed below. Details: CHANGELOG.md [2.1.0].
+
+| Item | State |
+|---|---|
+| Valuation Lab: Summary tab (estimated-value range across 7 methods vs price), FCFE model, margin of safety, historical P/E and P/B bands | ✅ unit tests (hand-calculated FCFE) + API tests + screenshots |
+| Working-capital ratios (payable days, cash conversion cycle, NWC/revenue) | ✅ tested; payables fill in when a company's statements are next refreshed (verified on TCS) |
+| Plain-English metric guide (33 metrics) + benchmark ratings + clickable explanations with history charts | ✅ tested (every ratio has a guide entry) + screenshots |
+| Industry policy & regulation (15 industries, 53 items, official links checked to respond) | ✅ tested |
+| Source tiers (official / secondary / unrated); unrated hidden by default and excluded from AI evidence | ✅ tested incl. AI context |
+| Compare: 1-year return, shareholding, strengths and points to check, industry risks | ✅ API test + screenshots |
+| Visual check (headless Edge): changed pages at 1440 px light and 390 px dark | ✅ no console errors, no horizontal overflow, no NaN/undefined text |
+
+Tests: **171 passing** (`python -m pytest -q`).
+
+Not changed, by design: no real-time prices (needs a paid broker API or licensed vendor, ≈ ₹500/month via Kite Connect, owner's choice); no BSE/MOSPI automatic feeds (linked, not scraped); shareholding and bank metrics are still entered from filings, because no free licensed source provides them.
+
 ## v2 PLATFORM UPGRADE – complete (12 Nov 2026)
 Architecture: FastAPI backend `api/` (reuses the `equitypilot/` core) + React/TS/Tailwind frontend `web/` (Vite), served together on port 8000. The Streamlit app (`app.py`) still works as the classic workbench.
 Audit: docs/AUDIT.md. Changelog: CHANGELOG.md.

@@ -13,6 +13,15 @@
 - [ ] Test `EQUITYPILOT_DATABASE_URL` against a real PostgreSQL server.
 - [ ] Add frontend unit/interaction tests (e.g. Vitest + Testing Library or Playwright). Currently the frontend has only a type-check, a build and screenshot checks.
 
+## Completed in v2.1 (see CHANGELOG.md)
+- [x] Valuation summary, FCFE, margin of safety and historical multiple bands
+- [x] Working-capital ratios, plain-English metric guide and benchmark ratings
+- [x] Industry policy and regulation section, news source tiers, an official-sources directory and Compare strengths and risks
+
+## Ideas not yet built
+- [ ] Revenue segments and product mix: no free licensed source. This could be added as a user-entered table from the annual report, like shareholding.
+- [ ] Historical shareholding trend chart in Compare (needs several quarters entered).
+
 ## Completed in v2 (see CHANGELOG.md)
 - [x] FastAPI + React platform with 20 routes, accounts, watchlists and alerts, Virtual Invest, official feeds, 15 industries, document Q&A and shareholding entry
 

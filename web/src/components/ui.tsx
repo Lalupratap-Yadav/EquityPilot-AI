@@ -60,6 +60,21 @@ export function DataBadge({ type, className }: { type?: string | null; className
   return <span title={tip} className={cx('inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide', cls, className)}>{label}</span>
 }
 
+const TIERS: Record<string, { label: string; title: string; cls: string }> = {
+  primary: { label: 'Official', title: 'Primary source: exchange, regulator or government publication', cls: 'bg-up/10 text-up' },
+  established: { label: 'Secondary', title: 'Secondary reporting by an established news organisation - verify material facts against the official filing', cls: 'bg-brand-500/10 text-brand-700 dark:text-brand-200' },
+  unrated: { label: 'Unrated', title: 'Publisher not classified as an established news organisation - treat with caution', cls: 'bg-orange-500/10 text-orange-700 dark:text-orange-300' },
+  sample: { label: 'Sample', title: 'Fictional sample data', cls: 'bg-saffron-500/15 text-amber-800 dark:text-amber-200' },
+  user: { label: 'Your entry', title: 'Entered by you', cls: 'bg-slate-500/10 text-slate-600 dark:text-slate-300' },
+}
+
+/** Source reliability badge shown on every news item. */
+export function TierBadge({ tier }: { tier?: string | null }) {
+  const t = TIERS[tier ?? '']
+  if (!t) return null
+  return <span title={t.title} className={cx('rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide', t.cls)}>{t.label}</span>
+}
+
 export function ChangePill({ value, className, size = 'sm' }: { value: number | null | undefined; className?: string; size?: 'sm' | 'md' }) {
   if (!isNum(value)) return <span className={cx('muted', className)}>—</span>
   const up = value > 0, flat = value === 0

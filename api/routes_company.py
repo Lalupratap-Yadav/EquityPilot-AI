@@ -15,6 +15,7 @@ from equitypilot.analytics import risk as K
 from equitypilot.analytics import technicals as T
 from equitypilot.analytics import valuation as V
 from equitypilot.analytics.screener import company_metrics
+from equitypilot.content import metrics_guide as MG
 from equitypilot.content.industries import BY_ID, industry_of
 from equitypilot.data import marketdata as M
 from equitypilot.data import repository as repo
@@ -95,7 +96,8 @@ def company(symbol: str, request: Request):
 
 @router.get("/companies/{symbol}/financials")
 def financials(symbol: str, period: str = "annual", basis: str | None = None):
-    _company_or_404(symbol)
+    c = _company_or_404(symbol)
+    fin = R.is_financial(c)
     if period not in ("annual", "quarterly"):
         raise HTTPException(400, "period must be annual or quarterly")
     fd = repo.get_financials(symbol, period, basis, auto_refresh=False)
@@ -110,8 +112,16 @@ def financials(symbol: str, period: str = "annual", basis: str | None = None):
                 rows.append({"key": k, "label": label(k), "values": clean(fd.wide.loc[k].tolist())})
         statements[st] = {"title": title, "rows": rows}
     rt = R.compute_ratios(fd)
-    ratios = [{"key": k, "label": d.label, "category": d.category, "formula": d.formula, "kind": d.kind, "help": d.help,
-               "values": clean(rt.loc[k].tolist())} for k, d in R.RATIOS.items() if k in rt.index]
+    ratios = []
+    for k, d in R.RATIOS.items():
+        if k not in rt.index:
+            continue
+        vals = rt.loc[k]
+        latest = vals.dropna()
+        ratios.append({"key": k, "label": d.label, "category": d.category, "formula": d.formula, "kind": d.kind, "help": d.help,
+                       "values": clean(vals.tolist()), "guide": MG.GUIDE.get(k),
+                       # benchmark ratings only for annual data - quarterly flows against balances are not comparable
+                       "assessment": MG.assess(k, float(latest.iloc[-1]), fin) if period == "annual" and len(latest) else None})
     dp = R.dupont(fd)
     fscore, tests = R.piotroski_f_score(fd) if period == "annual" else (None, [])
     return clean({
@@ -120,6 +130,7 @@ def financials(symbol: str, period: str = "annual", basis: str | None = None):
         "divisor": F.amount_unit(fd.currency)[0], "statements": statements, "ratios": ratios,
         "dupont": dp.to_dict("index") if not dp.empty else {}, "piotroski": {"score": fscore, "tests": tests},
         "cagr": {k: {"3y": R.cagr(fd.get(k), 3), "all": R.cagr(fd.get(k))} for k in ("revenue", "ebitda", "net_income", "eps_diluted")},
+        "benchmark_note": MG.BENCHMARK_NOTE, "is_financial": fin,
         "quality": R.quality_checks(fd), "sources": fd.sources, "source_urls": fd.source_urls, "data_types": fd.data_types,
         "fetched_at": fd.fetched_at,
     })
@@ -168,8 +179,17 @@ def valuation(symbol: str, request: Request):
     if not fd.empty and fd.latest("interest_expense") and fd.latest("total_debt"):
         kd = abs(fd.latest("interest_expense")) / fd.latest("total_debt")
     rt = R.compute_ratios(fd) if not fd.empty else pd.DataFrame()
+    fcfe_extra, fcfe_notes = V.default_fcfe_extras(fd)
+    bands = V.multiple_bands(hist, snap)
+    eps_now = snap["net_income"] / snap["shares"] if snap.get("net_income") and snap.get("shares") else None
+    bvps_now = snap["equity"] / snap["shares"] if snap.get("equity") and snap.get("shares") else None
+    implied_hist = {
+        "pe": bands["pe"]["median"] * eps_now if bands["pe"]["median"] and eps_now and eps_now > 0 else None,
+        "pb": bands["pb"]["median"] * bvps_now if bands["pb"]["median"] and bvps_now and bvps_now > 0 else None,
+    }
     return clean({
-        "snapshot": snap, "formulas": V.MULTIPLE_FORMULAS, "is_financial": R.is_financial(c), "history": hist,
+        "snapshot": snap, "bands": bands, "implied_from_history": implied_hist,
+        "fcfe_defaults": fcfe_extra or None, "fcfe_notes": fcfe_notes, "formulas": V.MULTIPLE_FORMULAS, "is_financial": R.is_financial(c), "history": hist,
         "dcf_defaults": asdict(base) if base else None, "dcf_notes": notes, "provider_beta": (quote or {}).get("beta"),
         "kd_hint": kd, "peers": pm[["symbol", "name", "pe", "pb", "ev_ebitda", "roe"]].to_dict("records") if not pm.empty else [],
         "relative": rel.to_dict("records") if not rel.empty else [],
@@ -179,6 +199,12 @@ def valuation(symbol: str, request: Request):
         "saved": users.get_pref(uid, f"valuation:{symbol}"),
         "hist_cagr_3y": R.cagr(fd.get("revenue"), 3) if not fd.empty else None,
     })
+
+
+class FCFEExtras(BaseModel):
+    net_margin: float = Field(ge=-1, le=1)
+    debt_ratio: float = Field(ge=0, lt=1)
+    cost_of_equity: float = Field(gt=0, le=0.5)
 
 
 class DCFRequest(BaseModel):
@@ -197,6 +223,7 @@ class DCFRequest(BaseModel):
     years: int = Field(5, ge=1, le=15)
     minority_interest: float = 0.0
     scenario_shifts: dict[str, list[float]] | None = None
+    fcfe: FCFEExtras | None = None
     save: bool = False
 
 
@@ -205,7 +232,7 @@ def dcf(symbol: str, body: DCFRequest, request: Request):
     uid = current_user(request)
     _company_or_404(symbol)
     data = body.model_dump()
-    shifts, save = data.pop("scenario_shifts"), data.pop("save")
+    shifts, save, fx = data.pop("scenario_shifts"), data.pop("save"), data.pop("fcfe")
     inp = V.DCFInputs(**data)
     try:
         res = V.run_dcf(inp)
@@ -224,7 +251,20 @@ def dcf(symbol: str, body: DCFRequest, request: Request):
            "scenarios": {k: ({"per_share": v.per_share, "terminal_share": v.terminal_share} if isinstance(v, V.DCFResult) else {"error": v})
                          for k, v in scn.items()},
            "sensitivity": {"waccs": waccs, "growths": gs, "values": grid.values.tolist()},
-           "implied_growth": implied}
+           "implied_growth": implied, "margin_of_safety": V.margin_of_safety(res.per_share, price)}
+    if fx:
+        try:
+            fr = V.run_fcfe(V.FCFEInputs(
+                base_revenue=inp.base_revenue, growth_start=inp.growth_start, growth_end=inp.growth_end,
+                net_margin=fx["net_margin"], da_pct=inp.da_pct, capex_pct=inp.capex_pct, nwc_pct=inp.nwc_pct,
+                debt_ratio=fx["debt_ratio"], cost_of_equity=fx["cost_of_equity"], terminal_growth=inp.terminal_growth,
+                shares=inp.shares, years=inp.years))
+            out["fcfe"] = {"per_share": fr.per_share, "equity_value": fr.equity_value, "pv_fcfe": fr.pv_fcfe,
+                           "terminal_value": fr.terminal_value, "pv_terminal": fr.pv_terminal, "terminal_share": fr.terminal_share,
+                           "projection": fr.projection.reset_index().to_dict("records"),
+                           "margin_of_safety": V.margin_of_safety(fr.per_share, price)}
+        except V.DCFError as exc:
+            out["fcfe"] = {"error": str(exc)}
     if save:
         users.set_pref(uid, f"valuation:{symbol}", {"inputs": asdict(inp), "per_share": res.per_share, "price": price,
                                                     "saved": F.ist(db.utcnow())})

@@ -3,13 +3,22 @@ import { ExternalLink, Search } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CompanyPicker } from '../components/CompanyPicker'
-import { Card, cx, EmptyState, Loading, PageHeader, SourceNote, Tabs } from '../components/ui'
+import { Card, cx, EmptyState, Loading, PageHeader, SourceNote, Tabs, TierBadge } from '../components/ui'
 import { api } from '../lib/api'
 import { baseSymbol, ist, timeAgo } from '../lib/format'
 import { useDebounced } from '../lib/hooks'
 
 type Section = 'disclosures' | 'results' | 'corporate' | 'company' | 'economy' | 'regulation' | 'global'
-interface Item { title: string; url: string | null; published: string | null; source: string; category: string; symbol: string | null; summary: string | null }
+interface Item { title: string; url: string | null; published: string | null; source: string; category: string; symbol: string | null; summary: string | null; tier?: string }
+
+const OFFICIAL = [
+  ['NSE corporate announcements', 'https://www.nseindia.com/companies-listing/corporate-filings-announcements'],
+  ['BSE corporate announcements', 'https://www.bseindia.com/corporates/ann.html'],
+  ['SEBI', 'https://www.sebi.gov.in/'],
+  ['RBI press releases', 'https://www.rbi.org.in/Scripts/BS_PressReleaseDisplay.aspx'],
+  ['MOSPI (GDP, inflation, IIP)', 'https://mospi.gov.in/'],
+  ['Press Information Bureau', 'https://pib.gov.in/'],
+]
 
 const INDUSTRIES = [['', 'All tracked companies'], ['banking', 'Banking'], ['financial-services', 'Financial services'], ['it', 'IT'], ['pharma', 'Pharma'], ['healthcare', 'Healthcare'],
   ['automobiles', 'Automobiles'], ['fmcg', 'FMCG'], ['agriculture', 'Agriculture'], ['energy', 'Energy'], ['infrastructure', 'Infrastructure'], ['metals', 'Metals'],
@@ -21,11 +30,13 @@ export default function News() {
   const [tracked, setTracked] = useState(true)
   const [symbol, setSymbol] = useState('')
   const [industry, setIndustry] = useState('')
+  const [unrated, setUnrated] = useState(false)
   const dq = useDebounced(query, 300)
-  const url = section === 'company'
+  const url = (section === 'company'
     ? `/news?section=company${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ''}${industry ? `&industry=${industry}` : ''}&q=${encodeURIComponent(dq)}&limit=80`
-    : `/news?section=${section}&q=${encodeURIComponent(dq)}&tracked_only=${tracked && ['disclosures', 'results', 'corporate'].includes(section)}&limit=80`
-  const q = useQuery({ queryKey: ['news', url], queryFn: () => api.get<{ items: Item[]; sources?: string[] }>(url), refetchInterval: 300_000 })
+    : `/news?section=${section}&q=${encodeURIComponent(dq)}&tracked_only=${tracked && ['disclosures', 'results', 'corporate'].includes(section)}&limit=80`) + `&include_unrated=${unrated}`
+  const q = useQuery({ queryKey: ['news', url], queryFn: () => api.get<{ items: Item[]; sources?: string[]; hidden_unrated?: number; unrated_note?: string }>(url), refetchInterval: 300_000 })
+  const hidden = q.data?.hidden_unrated ?? 0
   return (
     <div className="space-y-5">
       <PageHeader eyebrow="News & market intelligence" title="What's new - with the original source" subtitle="Exchange filings and results come from NSE's official RSS feeds (linking to the filing PDF); economic and regulatory updates from RBI and SEBI feeds; market headlines from third-party publishers via Yahoo Finance. EquityPilot never writes or alters news." />
@@ -42,7 +53,14 @@ export default function News() {
           {symbol && <button className="chip chip-active" onClick={() => setSymbol('')}>{baseSymbol(symbol)} ✕</button>}
         </>)}
       </div>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]">
       <Card pad={false}>
+        {(hidden > 0 || unrated) && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-2.5 text-xs dark:border-ink-700">
+            <span className="muted">{unrated ? 'Showing headlines from unrated publishers too (marked UNRATED).' : `${hidden} headline${hidden === 1 ? '' : 's'} from unrated publishers hidden.`}</span>
+            <button className="font-medium text-brand-600 hover:underline dark:text-brand-300" onClick={() => setUnrated(!unrated)}>{unrated ? 'Hide them' : 'Show them'}</button>
+          </div>
+        )}
         {q.isLoading ? <Loading /> : (q.data?.items.length ?? 0) === 0 ? <div className="p-5"><EmptyState title="No items" body="Nothing matches these filters right now. Feeds refresh automatically every few minutes." /></div> : (
           <ul className="divide-y divide-slate-100 dark:divide-ink-700">
             {q.data!.items.map((n, i) => (
@@ -52,6 +70,7 @@ export default function News() {
                   <div className="mb-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
                     {n.symbol && <Link to={`/company/${encodeURIComponent(n.symbol)}`} className="rounded bg-brand-50 px-1.5 py-0.5 font-semibold text-brand-700 hover:underline dark:bg-brand-500/15 dark:text-brand-200">{baseSymbol(n.symbol)}</Link>}
                     <span className={cx('rounded px-1.5 py-0.5 font-medium', n.category === 'Quarterly results' ? 'bg-up/10 text-up' : 'bg-slate-500/10 muted')}>{n.category}</span>
+                    <TierBadge tier={n.tier} />
                     <span className="muted">{n.source}</span>
                   </div>
                   <a href={n.url ?? '#'} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:text-brand-600 hover:underline">
@@ -65,6 +84,20 @@ export default function News() {
         )}
         <div className="px-5 pb-4"><SourceNote sources={q.data?.sources ?? ['NSE (RSS)', 'Yahoo Finance headlines']} extra="Times shown relative to now (hover for IST)." /></div>
       </Card>
+      <div className="space-y-5">
+        <Card title="How sources are labelled">
+          <ul className="space-y-2.5 text-sm">
+            <li className="flex gap-2"><span className="mt-0.5"><TierBadge tier="primary" /></span><span className="text-slate-600 dark:text-slate-300">Exchange, regulator or government publication. The authoritative record.</span></li>
+            <li className="flex gap-2"><span className="mt-0.5"><TierBadge tier="established" /></span><span className="text-slate-600 dark:text-slate-300">Reporting by an established news organisation. Check material facts against the filing.</span></li>
+            <li className="flex gap-2"><span className="mt-0.5"><TierBadge tier="unrated" /></span><span className="text-slate-600 dark:text-slate-300">Other publishers (tip sites, blogs, aggregators). Hidden by default and never used by the AI assistant.</span></li>
+          </ul>
+        </Card>
+        <Card title="Official sources" subtitle="Open the primary record directly">
+          <ul className="space-y-2 text-sm">{OFFICIAL.map(([l, u]) => <li key={u}><a href={u} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-300">{l}<ExternalLink className="h-3 w-3" /></a></li>)}</ul>
+          <p className="mt-3 text-xs muted">EquityPilot fetches automatically only from feeds the publisher offers for subscription (NSE, RBI and SEBI RSS). Other official sites are linked, not scraped.</p>
+        </Card>
+      </div>
+      </div>
     </div>
   )
 }

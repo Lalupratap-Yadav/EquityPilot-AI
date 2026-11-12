@@ -299,3 +299,106 @@ def peer_relative(target: dict, peers: pd.DataFrame) -> pd.DataFrame:
 
 def inputs_table(i: DCFInputs) -> dict:
     return asdict(i)
+
+
+# ------------------------------------------------------------------ FCFE (equity DCF)
+@dataclass
+class FCFEInputs:
+    base_revenue: float
+    growth_start: float
+    growth_end: float
+    net_margin: float               # net profit / revenue
+    da_pct: float
+    capex_pct: float
+    nwc_pct: float
+    debt_ratio: float               # share of net reinvestment funded by new borrowing (target D/(D+E))
+    cost_of_equity: float
+    terminal_growth: float
+    shares: float
+    years: int = 5
+
+
+@dataclass
+class FCFEResult:
+    projection: pd.DataFrame
+    pv_fcfe: float
+    terminal_value: float
+    pv_terminal: float
+    equity_value: float
+    per_share: float
+    terminal_share: float
+
+
+def run_fcfe(i: FCFEInputs) -> FCFEResult:
+    """FCFE = Net profit - (Capex - D&A + ΔNWC) × (1 - debt ratio)   [Damodaran's target-debt-ratio form]
+    Equity value = Σ FCFE_t/(1+Ke)^t + TV/(1+Ke)^N;  TV = FCFE_N×(1+g)/(Ke-g).  No net-debt adjustment:
+    cash flows are already after debt service, so they are discounted at the cost of equity."""
+    if i.cost_of_equity <= i.terminal_growth:
+        raise DCFError("Cost of equity must be greater than the terminal growth rate.")
+    if i.base_revenue <= 0 or i.shares <= 0:
+        raise DCFError("Base revenue and share count must be positive.")
+    if not 0 <= i.debt_ratio < 1:
+        raise DCFError("Debt ratio must be between 0% and 99%.")
+    if i.years < 1:
+        raise DCFError("Explicit forecast must be at least one year.")
+    rows, rev_prev = [], i.base_revenue
+    for t, g in enumerate(np.linspace(i.growth_start, i.growth_end, i.years), start=1):
+        rev = rev_prev * (1 + g)
+        ni = rev * i.net_margin
+        net_reinvest = rev * i.capex_pct - rev * i.da_pct + (rev - rev_prev) * i.nwc_pct
+        equity_reinvest = net_reinvest * (1 - i.debt_ratio)
+        fcfe = ni - equity_reinvest
+        df = 1 / (1 + i.cost_of_equity) ** t
+        rows.append({"Year": t, "Growth": g, "Revenue": rev, "Net profit": ni, "Net reinvestment": net_reinvest,
+                     "Equity-funded reinvestment": equity_reinvest, "FCFE": fcfe, "Discount factor": df, "PV of FCFE": fcfe * df})
+        rev_prev = rev
+    proj = pd.DataFrame(rows).set_index("Year")
+    pv = float(proj["PV of FCFE"].sum())
+    tv = float(proj["FCFE"].iloc[-1] * (1 + i.terminal_growth) / (i.cost_of_equity - i.terminal_growth))
+    pv_tv = tv / (1 + i.cost_of_equity) ** i.years
+    eq = pv + pv_tv
+    return FCFEResult(proj, pv, tv, pv_tv, eq, eq / i.shares, pv_tv / eq if eq else float("nan"))
+
+
+def default_fcfe_extras(fd: FinancialData) -> tuple[dict, dict[str, str]]:
+    """Net margin and debt ratio defaults (the rest of the FCFE inputs are shared with the FCFF DCF)."""
+    notes: dict[str, str] = {}
+    if fd.empty:
+        return {}, notes
+    rt = R.compute_ratios(fd)
+    nm = rt.loc["net_margin"].dropna().iloc[-3:] if "net_margin" in rt.index else pd.Series(dtype=float)
+    net_margin = float(np.clip(nm.mean(), -0.5, 0.6)) if len(nm) else 0.10
+    notes["net_margin"] = f"Net margin: 3-yr average {nm.mean():.1%}" if len(nm) else "Not available - default 10%"
+    debt, equity = fd.latest("total_debt") or 0.0, fd.latest("total_equity")
+    if equity and equity > 0:
+        dr = float(np.clip(debt / (debt + equity), 0.0, 0.6))
+        notes["debt_ratio"] = f"Book debt / (debt + equity) on the latest balance sheet: {debt / (debt + equity):.1%}"
+    else:
+        dr = 0.0
+        notes["debt_ratio"] = "Equity not available or negative - assumed 0% debt funding"
+    return {"net_margin": net_margin, "debt_ratio": dr}, notes
+
+
+# ------------------------------------------------------------------ history & margin of safety
+def multiple_bands(history: list[dict], current: dict) -> dict:
+    """Median / min / max of fiscal-year-end P/E and P/B versus today's multiple.
+    `history` rows carry pe/pb (None when earnings or book value were negative)."""
+    out = {}
+    for k in ("pe", "pb"):
+        vals = [h[k] for h in history if h.get(k) is not None and h[k] > 0]
+        cur = current.get(k)
+        if len(vals) < 2:
+            out[k] = {"n": len(vals), "median": None, "min": None, "max": None, "current": cur, "vs_median": None}
+            continue
+        med = float(np.median(vals))
+        out[k] = {"n": len(vals), "median": med, "min": float(min(vals)), "max": float(max(vals)), "current": cur,
+                  "vs_median": (cur / med - 1) if cur and med else None}
+    return out
+
+
+def margin_of_safety(value_per_share: float | None, price: float | None) -> float | None:
+    """MoS = (Estimated value - Price) / Estimated value. Positive = price below the estimate.
+    Undefined when the estimate is not positive."""
+    if value_per_share is None or price is None or value_per_share <= 0:
+        return None
+    return (value_per_share - price) / value_per_share

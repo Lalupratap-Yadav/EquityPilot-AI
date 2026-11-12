@@ -3,6 +3,7 @@ import { Bot, Calculator, ExternalLink, FileText, PiggyBank, RefreshCw } from 'l
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AlertButton, CompanyAvatar, TradeTicket, WatchlistButton } from '../components/common'
+import { ExplainLabel } from '../components/Explain'
 import { Card, ChangePill, cx, DataBadge, EmptyState, ErrorState, Loading, Modal, Notice, SourceNote, Stat, Tabs, useToast } from '../components/ui'
 import { api, ApiError, type Quote } from '../lib/api'
 import { baseSymbol, crore, inr, isNum, ist, mult, num, pct } from '../lib/format'
@@ -140,13 +141,19 @@ export default function Company() {
         <div className="grid gap-5 xl:grid-cols-3">
           <div className="space-y-5 xl:col-span-2">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label="Market cap" value={crore(m.market_cap)} help="Price × shares outstanding" />
-              <Stat label="P/E" value={mult(m.pe)} help="Market cap / net profit (TTM where available)" />
-              <Stat label="P/B" value={mult(m.pb)} help="Market cap / shareholders' equity" />
-              <Stat label={d.is_financial ? 'Dividend yield' : 'EV/EBITDA'} value={d.is_financial ? pct(m.dividend_yield) : mult(m.ev_ebitda)} help={d.is_financial ? 'Annual dividend / price' : 'Enterprise value / EBITDA (not meaningful for banks)'} />
-              <Stat label="ROE" value={pct(m.roe)} help="Net profit / average equity (latest FY)" />
-              <Stat label={d.is_financial ? 'Net margin' : 'ROCE'} value={d.is_financial ? pct(m.net_margin) : pct(m.roce)} help={d.is_financial ? 'Net profit / revenue' : 'EBIT / average capital employed'} />
-              <Stat label={d.is_financial ? 'Profit growth' : 'Debt / equity'} value={d.is_financial ? pct(m.net_income_growth, 1, true) : mult(m.debt_to_equity, 2)} />
+              <Stat label={<ExplainLabel metric="market_cap" label="Market cap" value={crore(m.market_cap)} formula="Price × shares outstanding" />} value={crore(m.market_cap)} />
+              <Stat label={<ExplainLabel metric="pe" label="P/E" value={mult(m.pe)} formula="Market cap / net profit (TTM where available)" />} value={mult(m.pe)} />
+              <Stat label={<ExplainLabel metric="pb" label="P/B" value={mult(m.pb)} formula="Market cap / shareholders' equity" />} value={mult(m.pb)} />
+              {d.is_financial
+                ? <Stat label={<ExplainLabel metric="dividend_yield" label="Dividend yield" value={pct(m.dividend_yield)} formula="Annual dividend per share / price" />} value={pct(m.dividend_yield)} />
+                : <Stat label={<ExplainLabel metric="ev_ebitda" label="EV/EBITDA" value={mult(m.ev_ebitda)} formula="Enterprise value / EBITDA" />} value={mult(m.ev_ebitda)} />}
+              <Stat label={<ExplainLabel metric="roe" label="ROE" value={pct(m.roe)} formula="Net profit / average shareholders' equity (latest FY)" />} value={pct(m.roe)} />
+              {d.is_financial
+                ? <Stat label={<ExplainLabel metric="net_margin" label="Net margin" value={pct(m.net_margin)} formula="Net profit / revenue" />} value={pct(m.net_margin)} />
+                : <Stat label={<ExplainLabel metric="roce" label="ROCE" value={pct(m.roce)} formula="EBIT / average capital employed" />} value={pct(m.roce)} />}
+              {d.is_financial
+                ? <Stat label={<ExplainLabel metric="net_income_growth" label="Profit growth" value={pct(m.net_income_growth, 1, true)} />} value={pct(m.net_income_growth, 1, true)} />
+                : <Stat label={<ExplainLabel metric="debt_to_equity" label="Debt / equity" value={mult(m.debt_to_equity, 2)} formula="Total borrowings / shareholders' equity" />} value={mult(m.debt_to_equity, 2)} />}
               <Stat label="52-week range" value={<span className="text-sm">{inr(fq.week52_low, 0)} – {inr(fq.week52_high, 0)}</span>} />
             </div>
             <Insights m={m} isFin={d.is_financial} />

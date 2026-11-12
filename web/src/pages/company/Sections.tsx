@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { BarsChart, Donut, LinesChart, PriceChart, type Bar, type Indicators } from '../../components/charts'
 import { DataTable, type Column } from '../../components/common'
-import { Card, ChangePill, cx, DataBadge, EmptyState, Loading, Notice, Segmented, SourceNote, Stat, useToast } from '../../components/ui'
+import { Card, ChangePill, cx, DataBadge, EmptyState, Loading, Notice, Segmented, SourceNote, Stat, TierBadge, useToast } from '../../components/ui'
 import { api } from '../../lib/api'
 import { baseSymbol, crore, inr, isNum, mult, num, pct, timeAgo } from '../../lib/format'
 import { useInvalidate } from '../../lib/hooks'
@@ -315,7 +315,9 @@ export function BankTab({ symbol, sample }: { symbol: string; sample: boolean })
 interface NewsItem { title: string; url: string | null; published: string | null; source: string; category: string; symbol: string | null; summary: string | null }
 
 export function NewsTab({ symbol, compact }: { symbol: string; compact?: boolean }) {
-  const q = useQuery({ queryKey: ['news', 'company', symbol], queryFn: () => api.get<{ items: NewsItem[] }>(`/news?section=company&symbol=${encodeURIComponent(symbol)}&limit=${compact ? 6 : 40}`) })
+  const [unrated, setUnrated] = useState(false)
+  const q = useQuery({ queryKey: ['news', 'company', symbol, unrated], queryFn: () => api.get<{ items: (NewsItem & { tier?: string })[]; hidden_unrated?: number }>(`/news?section=company&symbol=${encodeURIComponent(symbol)}&limit=${compact ? 6 : 40}&include_unrated=${unrated}`) })
+  const hidden = q.data?.hidden_unrated ?? 0
   return (
     <Card title={compact ? 'Latest news & filings' : 'News, filings & announcements'} subtitle={compact ? undefined : 'NSE filings link to the original PDF; headlines link to the original publisher'}
       action={compact ? <Link to={`/company/${encodeURIComponent(symbol)}?tab=news`} className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-300">All</Link> : undefined}>
@@ -323,12 +325,14 @@ export function NewsTab({ symbol, compact }: { symbol: string; compact?: boolean
         <ul className="space-y-3">
           {q.data!.items.map((n, i) => (
             <li key={i} className="text-sm">
-              <div className="text-[11px] muted">{n.category} · {n.source} · {timeAgo(n.published)}</div>
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] muted"><TierBadge tier={n.tier} />{n.category} · {n.source} · {timeAgo(n.published)}</div>
               <a href={n.url ?? '#'} target="_blank" rel="noopener noreferrer" className="hover:underline">{n.summary && n.source.includes('NSE') ? n.summary : n.title} <ExternalLink className="inline h-3 w-3 opacity-60" /></a>
             </li>
           ))}
         </ul>
       )}
+      {!compact && (hidden > 0 || unrated) && <p className="mt-3 text-xs muted">{unrated ? 'Including unrated publishers. ' : `${hidden} headline${hidden === 1 ? '' : 's'} from unrated publishers hidden. `}
+        <button className="font-medium text-brand-600 hover:underline dark:text-brand-300" onClick={() => setUnrated(!unrated)}>{unrated ? 'Hide them' : 'Show them'}</button></p>}
     </Card>
   )
 }

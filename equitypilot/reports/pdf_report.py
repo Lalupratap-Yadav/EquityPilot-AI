@@ -302,7 +302,8 @@ def build_report(symbol: str, opts: ReportOptions | None = None) -> bytes:
                 rrows = [["Result", "Value"], ["Enterprise value", F.big_inr(res.enterprise_value)],
                          ["Less: net debt" if i.net_debt >= 0 else "Add: net cash", F.big_inr(abs(i.net_debt))],
                          ["Equity value", F.big_inr(res.equity_value)],
-                         ["Value per share", F.inr(res.per_share)], ["Market price (report date)", F.inr(snap.get("price"))],
+                         ["Estimated value per share (model)", F.inr(res.per_share)], ["Market price (report date)", F.inr(snap.get("price"))],
+                         ["Margin of safety", F.pct(V.margin_of_safety(res.per_share, snap.get("price")), signed=True)],
                          ["Terminal value share of EV", F.pct(res.terminal_share)]]
                 story.append(Table([[_table(arows, [55 * mm, 30 * mm], align_right_from=1),
                                      _table(rrows, [50 * mm, 32 * mm], align_right_from=1)]],
@@ -320,8 +321,10 @@ def build_report(symbol: str, opts: ReportOptions | None = None) -> bytes:
                 grows = [["WACC \\ g"] + list(grid.columns)] + [[idx] + [F.inr(v, 0) for v in row] for idx, row in grid.iterrows()]
                 story += [_section("Sensitivity: value per share (rows WACC, columns terminal growth)",
                                    _table(grows, [30 * mm] + [35 * mm] * len(grid.columns), align_right_from=1), "h2")]
-                story.append(_p("FCFF = EBIT×(1-t) + D&A - capex - ΔNWC; TV = FCFF_N×(1+g)/(WACC-g). Model values depend entirely "
-                                f"on these assumptions (saved {_esc(val.get('saved'))}).", "small"))
+                story.append(_p("FCFF = EBIT×(1-t) + D&A - capex - ΔNWC; TV = FCFF_N×(1+g)/(WACC-g). Margin of safety = "
+                                "(estimated value - price) / estimated value. Model values are estimates that depend entirely "
+                                f"on these assumptions (saved {_esc(val.get('saved'))}); they are not a price target or a "
+                                "statement of the stock's true value.", "small"))
         else:
             story.append(_p("No DCF saved for this company (or statements are not in INR). Build and save one on the "
                             "Valuation page to include it.", "small"))

@@ -18,6 +18,7 @@ from ..analytics import ratios as R
 from ..analytics import risk as K
 from ..analytics import valuation as V
 from ..data import repository as repo
+from ..data import source_tiers as ST
 from ..data import uploads as U
 
 
@@ -196,12 +197,14 @@ def build_context(symbol: str, question: str = "", doc_ids: list[int] | None = N
 
     # ---- news & disclosures
     if include_news:
-        d = repo.get_disclosures(symbol, limit=15)
+        d = repo.get_disclosures(symbol, limit=25)
+        if not d.empty:  # unrated publishers (tip sites, blogs) are never used as evidence
+            d = d[[ST.tier(r["publisher"], r["data_type"]) != "unrated" for _, r in d.iterrows()]].head(15)
         if not d.empty:
             ctx.add("Recent headlines and disclosures (titles only)",
                     "\n".join(f"- {F.fdate(r['date'])} [{r['category']}] {r['title']} ({r['publisher'] or r['source']})"
                               for _, r in d.iterrows()),
-                    "Yahoo Finance news aggregator / user-logged filings", d["data_type"].iloc[0])
+                    "Yahoo Finance news aggregator (established publishers only) / user-logged filings", d["data_type"].iloc[0])
 
     # ---- documents: keyword-ranked pages
     for doc_id in doc_ids or []:

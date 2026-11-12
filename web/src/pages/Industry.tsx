@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { CheckSquare, ExternalLink, Scale, ShieldAlert, Sparkles, TrendingUp } from 'lucide-react'
+import { CheckSquare, ExternalLink, Gavel, Scale, ShieldAlert, Sparkles, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { BarsChart, Sparkline } from '../components/charts'
@@ -16,6 +16,7 @@ interface IndustryResp {
   announcements: { title: string; summary: string; url: string; published: string; category: string; symbol: string }[]
   news: { title: string; url: string; date: string; publisher: string; symbol: string }[]
   editorial_note: string
+  policies: { name: string; body: string; what: string; url: string }[]; policy_note: string
 }
 
 function List({ title, icon, items }: { title: string; icon: React.ReactNode; items: string[] }) {
@@ -65,6 +66,21 @@ export default function Industry() {
         <List title="How analysts value it" icon={<Scale className="h-4 w-4 text-saffron-500" />} items={d.valuation} />
       </div>
 
+      {d.policies.length > 0 && (
+        <Card title={<span className="inline-flex items-center gap-1.5"><Gavel className="h-4 w-4 text-brand-600" />Government policy & regulation</span>} subtitle={d.policy_note} action={<DataBadge type="editorial" />}>
+          <ul className="grid gap-3 md:grid-cols-2">
+            {d.policies.map((x) => (
+              <li key={x.name} className="rounded-xl border border-slate-200 p-3 text-sm dark:border-ink-700">
+                <div className="font-medium">{x.name}</div>
+                <div className="text-[11px] muted">{x.body}</div>
+                <p className="mt-1.5 leading-relaxed text-slate-600 dark:text-slate-300">{x.what}</p>
+                <a href={x.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-brand-600 hover:underline dark:text-brand-300">Official source <ExternalLink className="h-3 w-3" /></a>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <Card title="Competitive landscape" subtitle="Listed companies compared on metrics relevant to this industry (latest fiscal year; delayed prices). Click a row to open the company."
         action={<Link className="btn-outline" to={`/compare?symbols=${d.companies.slice(0, 5).map((c) => c.symbol).join(',')}`}>Compare top 5</Link>}>
         <DataTable rows={d.companies} rowKey={(r) => String(r.symbol)} columns={cols} onRowClick={(r) => nav(`/company/${encodeURIComponent(String(r.symbol))}`)} initialSort={{ key: 'market_cap', dir: 'desc' }} />
@@ -91,7 +107,7 @@ export default function Industry() {
           )}
           <SourceNote sources={['NSE India corporate announcements (RSS)']} />
         </Card>
-        <Card title="Recent developments in the news" subtitle="Headlines for this industry's companies (third-party publishers)">
+        <Card title="Recent developments in the news" subtitle="Headlines for this industry's companies - secondary reporting by established publishers only; unrated sites are excluded">
           {d.news.length === 0 ? <p className="text-sm muted">No headlines stored yet - they are fetched when you open company news.</p> : (
             <ul className="space-y-3">{d.news.map((n, i) => (
               <li key={i} className="text-sm"><div className="text-[11px] muted"><b>{baseSymbol(n.symbol)}</b> · {n.publisher} · {timeAgo(n.date)}</div>

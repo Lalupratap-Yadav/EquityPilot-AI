@@ -19,8 +19,8 @@ It applies equity-research practice from the NISM Series XV (Research Analyst) c
 
 | Area | Pages and features |
 |---|---|
-| **Discover** | **Home**: indices, market movers, sector heat map, watchlist, recently viewed and Virtual Invest snapshot.<br>**Explore**: themed collections, AMFI large/mid/small-cap rows and trending companies.<br>**Industry Intelligence Centre**: 15 industries, each with drivers, risks, valuation approach and industry-specific metrics.<br>**Market Tracker**: candlestick, line and area charts from 1 day to max, with streaming quote updates. |
-| **Research** | **Company pages**: overview, chart, statements, quarterly results, ratios, technicals, risk flags, peers, shareholding, bank metrics, news and notes.<br>**Equity Research** workspace.<br>**Valuation Lab**: DCF, scenarios, sensitivity, reverse DCF, peer multiples and justified P/B.<br>**Screener** with saved screens, and **Compare** for 2–5 companies.<br>**News & Market Intelligence**: NSE filings and results, RBI, SEBI and global markets.<br>**AI Assistant**, **Documents** (PDF question-answering with page citations) and **Reports** (PDF). |
+| **Discover** | **Home**: indices, market movers, sector heat map, watchlist, recently viewed and Virtual Invest snapshot.<br>**Explore**: themed collections, AMFI large/mid/small-cap rows and trending companies.<br>**Industry Intelligence Centre**: 15 industries, each with drivers, risks, government policy and regulators (with official links), valuation approach, industry-specific metrics and recent filings.<br>**Market Tracker**: candlestick, line and area charts from 1 day to max, with streaming quote updates. |
+| **Research** | **Company pages**: overview, chart, statements, quarterly results, ratios, technicals, risk flags, peers, shareholding, bank metrics, news and notes.<br>**Equity Research** workspace.<br>**Valuation Lab**: an estimated-value range across methods, FCFF and FCFE DCF, margin of safety, scenarios, sensitivity, reverse DCF, historical P/E and P/B bands, peer multiples and justified P/B.<br>**Plain-English explanations**: click any ratio to see what it means, why it matters, how to read it, a worked example and its history. Ratings are applied only where a fair benchmark exists.<br>**Screener** with saved screens, and **Compare** for 2–5 companies.<br>**News & Market Intelligence**: NSE filings and results, RBI, SEBI and global markets.<br>**AI Assistant**, **Documents** (PDF question-answering with page citations) and **Reports** (PDF). |
 | **My space** | **Watchlists**: several lists, with notes and price alerts that raise notifications.<br>**Portfolio**: value, XIRR, allocation, risk and correlation.<br>**Virtual Invest**: practice orders, P&L, allocation, performance vs NIFTY 50, achievements, an opt-in leaderboard and reset. |
 | **Learn** | **Learning Centre**: 8 modules with quizzes and saved progress, plus a glossary.<br>**How to Use** guide.<br>**Settings**: account, theme, AI engine and costs, data sources, and export of your data. |
 
@@ -36,7 +36,8 @@ Search for any of the **5,552 listed securities** from anywhere with `Ctrl+K` (o
 
 1. **Nothing is invented.** Every figure comes from a named source or a calculation shown on screen. Missing data shows as "—".
 2. **Every number is labelled:** `DELAYED` · `LAST CLOSE` · `HISTORICAL` · `THIRD-PARTY` · `OFFICIAL (UPLOADED)` · `USER-ENTERED` · `CALCULATED` · `ASSUMPTION` · `SAMPLE`. Each label comes with the source, period, statement basis and retrieval time in IST.
-3. **Only legitimate sources** (all verified in [docs/AUDIT.md](docs/AUDIT.md)):
+3. **Every headline carries a source label.** `OFFICIAL` means an exchange, regulator or government source. `SECONDARY` means an established news organisation; check material facts against the filing. Headlines from other publishers (tip sites, blogs, aggregators) are hidden by default and never used as evidence by the AI assistant.
+4. **Only legitimate sources** (all verified in [docs/AUDIT.md](docs/AUDIT.md)):
 
    | Source | Used for |
    |---|---|
@@ -47,13 +48,14 @@ Search for any of the **5,552 listed securities** from anywhere with `Ctrl+K` (o
    | Yahoo Finance via `yfinance` | Delayed quotes, intraday and historical prices, statements, corporate actions, headlines |
 
    nseindia.com pages block automated clients (HTTP 403), so EquityPilot does not scrape them.
-4. **No real-time prices.** Real-time NSE/BSE data needs a licensed vendor or a broker API on your own trading account, at roughly ₹0–500 per month depending on the broker. Prices go through a pluggable `MarketDataProvider`, so a broker adapter can be added later. Until then every price is labelled delayed.
-5. **Edge cases are handled explicitly:**
+5. **No real-time prices.** Real-time NSE/BSE data needs a licensed vendor or a broker API on your own trading account, at roughly ₹0–500 per month depending on the broker. Prices go through a pluggable `MarketDataProvider`, so a broker adapter can be added later. Until then every price is labelled delayed.
+6. **Edge cases are handled explicitly:**
    - Banks get bank metrics and justified P/B in place of EV/EBITDA and FCFF DCF.
    - Multiples are disabled for statements reported in USD.
    - Growth is left blank across a fiscal-year change.
    - Balance sheets that don't balance are flagged.
-6. **Works offline.** Five watermarked fictional sample companies, including a bank, let every feature run without internet access.
+7. **Estimates are labelled as estimates.** Valuation outputs are called "estimated value", always shown next to the assumptions that produce them, and never presented as a target or the stock's true value.
+8. **Works offline.** Five watermarked fictional sample companies, including a bank, let every feature run without internet access.
 
 ---
 

@@ -28,6 +28,7 @@ LINE_ITEMS: dict[str, tuple[str, str, list[str]]] = {
     "cash": ("balance", "Cash & short-term investments", ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents"]),
     "receivables": ("balance", "Trade receivables", ["Accounts Receivable", "Receivables"]),
     "inventory": ("balance", "Inventories", ["Inventory"]),
+    "payables": ("balance", "Trade payables", ["Accounts Payable", "Payables"]),
     "net_ppe": ("balance", "Net fixed assets (PP&E)", ["Net PPE"]),
     "total_liabilities": ("balance", "Total liabilities", ["Total Liabilities Net Minority Interest"]),
     "current_liabilities": ("balance", "Current liabilities", ["Current Liabilities"]),

@@ -14,10 +14,13 @@ from equitypilot import config, db
 from equitypilot.analytics import bank as B
 from equitypilot.analytics.screener import METRIC_COLUMNS, PRESETS, apply_filters, company_metrics, universe_metrics
 from equitypilot.content.industries import BY_ID, INDUSTRIES, industry_of
+from equitypilot.content import metrics_guide as MG
 from equitypilot.content.learning import MODULES
+from equitypilot.content.policies import POLICIES, POLICY_NOTE
 from equitypilot.data import feeds as N
 from equitypilot.data import marketdata as M
 from equitypilot.data import repository as repo
+from equitypilot.data import source_tiers as ST
 from equitypilot.data import securities as S
 
 from .core import clean, current_user, not_found
@@ -194,13 +197,15 @@ def industry(iid: str, request: Request):
     news = N.query(symbols=ind["symbols"], limit=25)
     yahoo = repo.get_disclosures(None, limit=400)
     if not yahoo.empty:
-        yahoo = yahoo[yahoo["symbol"].isin(ind["symbols"]) & (yahoo["category"] == "News")].head(15)
+        yahoo = yahoo[yahoo["symbol"].isin(ind["symbols"]) & (yahoo["category"] == "News")]
+        yahoo = yahoo[[ST.tier(r["publisher"], r["data_type"]) != "unrated" for _, r in yahoo.iterrows()]].head(15)
     idx = next((i for i in M.index_overview() if i.get("industry") == iid), None)
     metric_defs = {k: {"label": METRIC_COLUMNS[k][0], "kind": METRIC_COLUMNS[k][1]} for k in ind["compare_metrics"]}
     if ind.get("bank_metrics"):
         metric_defs.update({k: {"label": B.BANK_METRICS[k][0], "kind": "pctpt"} for k in ("gnpa", "nnpa", "crar", "casa", "nim")})
     return clean({**{k: ind[k] for k in ("id", "name", "icon", "overview", "drivers", "trends", "risks", "valuation", "disclosure_kpis")},
                   "metrics": metric_defs, "companies": rows, "index": idx,
+                  "policies": POLICIES.get(iid, []), "policy_note": POLICY_NOTE,
                   "announcements": news.to_dict("records"),
                   "news": yahoo.to_dict("records") if not yahoo.empty else [],
                   "editorial_note": "Industry overview, drivers, trends and risks are EquityPilot editorial background "
@@ -265,6 +270,8 @@ def compare(symbols: str, request: Request):
     current_user(request)
     syms = [s for s in symbols.split(",") if s][:5]
     rows = [company_metrics(s) for s in syms if repo.get_company(s)]
+    for row in rows:
+        _add_compare_extras(row)
     series = {}
     for s in syms:
         fd = repo.get_financials(s, auto_refresh=False)
@@ -277,4 +284,48 @@ def compare(symbols: str, request: Request):
             p = p[p["date"] >= p["date"].max() - pd.Timedelta(days=365)]
             series.setdefault(s, {})["price_index"] = [{"date": str(d.date()), "value": float(v / p["close"].iloc[0] * 100)}
                                                       for d, v in zip(p["date"], p["close"])]
-    return clean({"rows": rows, "series": series, "metrics": {k: {"label": v[0], "kind": v[1]} for k, v in METRIC_COLUMNS.items()}})
+    metrics = {k: {"label": v[0], "kind": v[1]} for k, v in METRIC_COLUMNS.items()}
+    metrics.update(COMPARE_EXTRA_METRICS)
+    return clean({"rows": rows, "series": series, "metrics": metrics, "benchmark_note": MG.BENCHMARK_NOTE})
+
+
+COMPARE_EXTRA_METRICS = {
+    "return_1y": {"label": "Price return (1 year)", "kind": "pct"},
+    "promoter_pct": {"label": "Promoter holding", "kind": "pctpt"},
+    "fii_pct": {"label": "FII / FPI holding", "kind": "pctpt"},
+    "dii_pct": {"label": "DII holding", "kind": "pctpt"},
+}
+_HIGHLIGHT_KEYS = ["roe", "roce", "revenue_growth", "net_income_growth", "debt_to_equity", "interest_coverage", "cfo_to_net_income"]
+
+
+def _add_compare_extras(row: dict) -> None:
+    """1-year price return, latest shareholding split and rule-based strengths / watch-points."""
+    sym = row["symbol"]
+    px = repo.get_prices(sym, auto_refresh=False)
+    row["return_1y"] = None
+    if not px.empty:
+        last = px["date"].max()
+        base = px[px["date"] <= last - pd.Timedelta(days=365)]
+        if not base.empty and base["close"].iloc[-1] > 0 and (last - base["date"].iloc[-1]).days < 375:
+            row["return_1y"] = float(px["close"].iloc[-1] / base["close"].iloc[-1] - 1)
+    sh = repo.get_shareholding(sym)
+    row.update(promoter_pct=None, fii_pct=None, dii_pct=None, shareholding_period=None)
+    if not sh.empty:
+        latest = sh[sh["period"] == sh["period"].max()]
+        row["shareholding_period"] = str(sh["period"].max())
+        for _, r in latest.iterrows():
+            cat = str(r["category"]).lower()
+            key = "promoter_pct" if cat.startswith("promoter") else "fii_pct" if ("fii" in cat or "fpi" in cat) else "dii_pct" if cat.startswith("dii") else None
+            if key:
+                row[key] = r["pct"]
+    fin = bool(row.get("is_financial"))
+    highlights = []
+    for k in _HIGHLIGHT_KEYS:
+        a = MG.assess(k, row.get(k), fin)
+        if a and a["level"] != "moderate":
+            label = METRIC_COLUMNS.get(k, (k,))[0]
+            highlights.append({"kind": "strength" if a["level"] == "strong" else "watch", "metric": label, "text": a["text"]})
+    row["highlights"] = highlights
+    ind = BY_ID.get(industry_of(sym) or "")
+    row["industry_risks"] = ind["risks"][:3] if ind else []
+    row["industry_name"] = ind["name"] if ind else None

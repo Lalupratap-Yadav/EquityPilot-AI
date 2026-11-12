@@ -1,5 +1,40 @@
 # Changelog
 
+## [2.1.0] – 12 Nov 2026 – Research depth, plain-English explanations and source trust
+### Valuation
+- **Summary tab** in the Valuation Lab: an estimated-value range chart that compares DCF (FCFF, with the bear-to-bull range), DCF (FCFE), peer-median P/E, P/B and EV/EBITDA, and the company's own median P/E and P/B against the market price. A permanent notice says these are model estimates, not the stock's true or exact value.
+- **FCFE model** (Damodaran's target-debt-ratio form): FCFE = Net profit − (Capex − D&A + ΔNWC) × (1 − debt-funded share), discounted at the cost of equity. It shares growth and reinvestment assumptions with the FCFF tab, and defaults come from the 3-year net margin and the book debt ratio.
+- **Margin of safety** = (estimated value − price) / estimated value. It appears on both DCF tabs, in the summary (with a slider that shows the price giving a chosen cushion) and in the PDF report.
+- **Historical multiple bands:** current P/E and P/B against their fiscal-year-end median, low and high, plus the implied value at the median multiple.
+- Labels changed from "intrinsic value" to "estimated value" in the web app, the classic workbench and the PDF.
+
+### Financial analysis
+- **Working-capital ratios:** payable days, cash conversion cycle and net working capital / revenue. A new `payables` line item is mapped from the provider. The cycle stays blank unless all three inputs are reported, and missing values are never treated as zero.
+- **Plain-English metric guide** (`equitypilot/content/metrics_guide.py`) with four parts for 33 metrics: what it means, why it matters, how to read it, and an example.
+  - Click any ratio, or a key stat on the company overview or in Compare, to open the explanation with the company's value and a history chart.
+- **Benchmark ratings** (Strong / Moderate / Weak, always with a text label) for annual figures only, and only where a widely used rule of thumb exists: ROE, ROCE, D/E, interest coverage, net debt/EBITDA, current ratio, CFO/net profit and growth.
+  - Valuation multiples are never rated.
+  - Leverage, liquidity and cash-flow ratings are skipped for banks and NBFCs.
+- **"Financial health at a glance"** card on the Ratios view.
+
+### Industries
+- A **Government policy & regulation** section for all 15 industries (`equitypilot/content/policies.py`). It covers 53 long-standing laws, schemes and regulators, each with the official website. Every link was checked to respond, and unreachable ones were replaced with the current official domain.
+
+### News and source trust
+- **Source tiers** (`equitypilot/data/source_tiers.py`):
+  - OFFICIAL: exchange, regulator or government.
+  - SECONDARY: an established news organisation or wire.
+  - UNRATED: tip sites, blogs and aggregators.
+- Unrated headlines are hidden by default, with a "show them" toggle and a count, and they are excluded from the AI assistant's evidence and the industry news panel.
+- The News page has a source-label legend and an **Official sources** directory (NSE, BSE, SEBI, RBI, MOSPI, PIB). It explains that only publisher-offered feeds are fetched and other official sites are linked, not scraped.
+
+### Compare
+- New rows: 1-year price return and the latest entered shareholding (promoter, FII/FPI, DII). Rows are shown only when data exists.
+- A **Strengths and points to check** card for each company, built from the benchmark ratings, plus the three main risks of each company's industry.
+
+### Tests
+- 23 new tests (`tests/test_research_quality.py`): the FCFE hand calculation (₹97.50 per share) and error cases, margin of safety, multiple bands, working-capital ratios (blank when payables are missing), benchmark ratings, guide coverage of every ratio, source tiers, hiding unrated headlines including from the AI context, and the new API fields.
+
 ## [2.0.0] – 12 Nov 2026 – Platform upgrade
 ### Architecture
 - FastAPI backend (`api/`) and React 19 / TypeScript / Vite / Tailwind v4 frontend (`web/`), served from one process. The tested Python core (`equitypilot/`) is reused unchanged, and the Streamlit app remains as the "classic workbench".

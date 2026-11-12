@@ -19,6 +19,7 @@ from equitypilot.content.industries import BY_ID
 from equitypilot.content.learning import MODULES
 from equitypilot.data import feeds as N
 from equitypilot.data import repository as repo
+from equitypilot.data import source_tiers as ST
 from equitypilot.data import uploads as U
 from equitypilot.data.official import OFFICIAL_SOURCES
 from equitypilot.reports.pdf_report import ReportOptions, build_report
@@ -37,10 +38,18 @@ NEWS_SECTIONS = {
 }
 
 
+def _filter_tiers(items: list[dict], include_unrated: bool) -> tuple[list[dict], int]:
+    if include_unrated:
+        return items, 0
+    kept = [i for i in items if i.get("tier") != "unrated"]
+    return kept, len(items) - len(kept)
+
+
 @router.get("/news")
 def news(request: Request, section: str = "disclosures", symbol: str | None = None, industry: str | None = None,
-         q: str | None = None, tracked_only: bool = False, limit: int = 60):
+         q: str | None = None, tracked_only: bool = False, limit: int = 60, include_unrated: bool = False):
     current_user(request)
+    limit = max(1, min(limit, 200))
     N.refresh_all()                          # TTL-cached per feed
     if section == "company":
         if industry in BY_ID:
@@ -60,19 +69,23 @@ def news(request: Request, section: str = "disclosures", symbol: str | None = No
             if q:
                 ynews = ynews[ynews["title"].str.contains(q, case=False, regex=False)]
         items = [{"title": r["title"], "url": r["url"], "published": r["published"], "source": r["source"], "category": r["category"],
-                  "symbol": r["symbol"], "summary": r["summary"]} for r in nse.to_dict("records")]
+                  "symbol": r["symbol"], "summary": r["summary"], "tier": "primary"} for r in nse.to_dict("records")]
         if not ynews.empty:
             items += [{"title": r["title"], "url": r["url"], "published": r["date"], "category": r["category"],
                        "source": (r["publisher"] or "") + (" via Yahoo Finance" if r["data_type"] == "third_party" else f" ({r['source']})"),
-                       "symbol": r["symbol"], "summary": None} for r in ynews.to_dict("records")]
+                       "symbol": r["symbol"], "summary": None, "tier": ST.tier(r["publisher"], r["data_type"])} for r in ynews.to_dict("records")]
+        items, hidden = _filter_tiers(items, include_unrated)
         items.sort(key=lambda x: str(x["published"] or ""), reverse=True)
-        return clean({"items": items[:limit], "section": "Company & sector news"})
+        return clean({"items": items[:limit], "section": "Company & sector news", "hidden_unrated": hidden,
+                      "unrated_note": ST.UNRATED_NOTE})
     cfg = NEWS_SECTIONS.get(section)
     if not cfg:
         raise not_found("News section")
     tracked = repo.list_companies()["symbol"].tolist() if tracked_only else None
-    df = N.query(feeds=cfg["feeds"], category=cfg.get("category"), symbols=tracked, q=q, limit=limit)
-    return clean({"items": df.to_dict("records"), "section": cfg["title"],
+    df = N.query(feeds=cfg["feeds"], category=cfg.get("category"), symbols=tracked, q=q, limit=limit * 2)
+    items = [{**r, "tier": "primary" if r.get("feed") != "yahoo_market" else ST.tier(r.get("source"))} for r in df.to_dict("records")]
+    items, hidden = _filter_tiers(items, include_unrated)
+    return clean({"items": items[:limit], "section": cfg["title"], "hidden_unrated": hidden, "unrated_note": ST.UNRATED_NOTE,
                   "sources": sorted({N.FEEDS[f]["source"] if f in N.FEEDS else "Yahoo Finance headlines (third-party publishers)" for f in cfg["feeds"]})})
 
 
@@ -277,6 +290,13 @@ def learn(request: Request):
     uid = current_user(request)
     return clean({"modules": MODULES, "progress": users.get_pref(uid, "learning_progress", {}),
                   "glossary": [{"term": k, **v} for k, v in GLOSSARY.items()]})
+
+
+@router.get("/learn/metrics")
+def metrics_guide():
+    """Plain-English metric explanations used by tooltips and 'Explain' panels across the app."""
+    from equitypilot.content import metrics_guide as MG
+    return {"guide": MG.GUIDE, "benchmark_note": MG.BENCHMARK_NOTE}
 
 
 class QuizResult(BaseModel):

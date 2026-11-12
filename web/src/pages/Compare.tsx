@@ -5,22 +5,26 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { LinesChart } from '../components/charts'
 import { CompanyPicker } from '../components/CompanyPicker'
 import { CompanyAvatar } from '../components/common'
+import { ExplainLabel } from '../components/Explain'
 import { Card, cx, EmptyState, Loading, Notice, PageHeader } from '../components/ui'
 import { api } from '../lib/api'
 import { baseSymbol, byKind, isNum } from '../lib/format'
 
-type Row = Record<string, string | number | boolean | null>
-interface CompareResp { rows: Row[]; series: Record<string, { revenue_index?: { label: string; value: number }[]; price_index?: { date: string; value: number }[] }>; metrics: Record<string, { label: string; kind: string }> }
+type Row = Record<string, string | number | boolean | null> & { highlights?: { kind: 'strength' | 'watch'; metric: string; text: string }[]; industry_risks?: string[] }
+interface CompareResp { benchmark_note?: string; rows: Row[]; series: Record<string, { revenue_index?: { label: string; value: number }[]; price_index?: { date: string; value: number }[] }>; metrics: Record<string, { label: string; kind: string }> }
 
 const GROUPS: [string, string[]][] = [
   ['Valuation', ['price', 'market_cap', 'pe', 'pb', 'ev_ebitda', 'dividend_yield']],
+  ['Market performance', ['return_1y']],
   ['Growth', ['revenue_growth', 'net_income_growth', 'revenue_cagr_3y', 'profit_cagr_3y']],
   ['Profitability & returns', ['ebitda_margin', 'net_margin', 'roe', 'roce']],
   ['Balance sheet & cash flow', ['debt_to_equity', 'interest_coverage', 'current_ratio', 'cfo_to_net_income', 'fcf_margin']],
   ['Scale & quality', ['revenue', 'net_income', 'piotroski']],
+  ['Shareholding (latest quarter entered)', ['promoter_pct', 'fii_pct', 'dii_pct']],
 ]
+const GUIDE_KEYS = new Set(['market_cap', 'pe', 'pb', 'ev_ebitda', 'dividend_yield', 'revenue_growth', 'net_income_growth', 'ebitda_margin', 'net_margin', 'roe', 'roce', 'debt_to_equity', 'interest_coverage', 'current_ratio', 'cfo_to_net_income', 'fcf_margin'])
 const LOWER_BETTER = new Set(['pe', 'pb', 'ev_ebitda', 'debt_to_equity'])
-const NO_STAR = new Set(['price', 'market_cap', 'revenue', 'net_income'])
+const NO_STAR = new Set(['price', 'market_cap', 'revenue', 'net_income', 'promoter_pct', 'fii_pct', 'dii_pct', 'return_1y'])
 
 export default function Compare() {
   const [params, setParams] = useSearchParams()
@@ -66,16 +70,35 @@ export default function Compare() {
             <thead><tr><th className="table-head px-4 py-3">Metric</th>{rows.map((r) => (
               <th key={String(r.symbol)} className="table-head px-4 py-3 text-right normal-case tracking-normal"><Link to={`/company/${encodeURIComponent(String(r.symbol))}`} className="inline-flex items-center gap-2 hover:underline">
                 <CompanyAvatar symbol={String(r.symbol)} size="sm" /><span className="text-left text-xs font-semibold text-slate-800 dark:text-slate-100">{String(r.name).replace(' Limited', '')}</span></Link></th>))}</tr></thead>
-            <tbody>{GROUPS.map(([g, keys]) => [
+            <tbody>{GROUPS.filter(([, keys]) => keys.some((k) => rows.some((r) => r[k] !== null && r[k] !== undefined))).map(([g, keys]) => [
               <tr key={g}><td colSpan={rows.length + 1} className="bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-brand-700 dark:bg-ink-800 dark:text-brand-300">{g}</td></tr>,
               ...keys.map((k) => { const b = best(k); const def = q.data!.metrics[k]
                 return (
                   <tr key={k} className="border-t border-slate-100 dark:border-ink-700">
-                    <td className="px-4 py-2">{def?.label ?? k}</td>
+                    <td className="px-4 py-2">{GUIDE_KEYS.has(k) ? <ExplainLabel metric={k} label={def?.label ?? k} /> : def?.label ?? k}</td>
                     {rows.map((r) => { const v = r[k]; const star = b !== null && v === b
                       return <td key={String(r.symbol)} className={cx('num px-4 py-2 text-right', star && 'font-semibold text-brand-700 dark:text-brand-200')}>{byKind(v, def?.kind ?? 'num')}{star ? ' ★' : ''}</td> })}
                   </tr>)
               })])}</tbody></table></div>
+        </Card>
+        <Card title="Strengths and points to check" subtitle="Rule-based reading of the latest annual figures against general benchmarks, plus the main risks of each company's industry. A starting point for research - not a ranking or a recommendation.">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {rows.map((r) => (
+              <div key={String(r.symbol)} className="rounded-xl border border-slate-200 p-3.5 text-sm dark:border-ink-700">
+                <div className="flex items-center gap-2 font-semibold"><CompanyAvatar symbol={String(r.symbol)} size="sm" />{String(r.name).replace(' Limited', '')}</div>
+                {(r.highlights ?? []).length === 0 ? <p className="mt-2 text-xs muted">No metric is clearly above or below the general benchmarks (or data not available).</p> : (
+                  <ul className="mt-2 space-y-1.5">{r.highlights!.map((h) => (
+                    <li key={h.metric} className="flex gap-2"><span className={cx('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', h.kind === 'strength' ? 'bg-up' : 'bg-down')} />
+                      <span><b className="font-medium">{h.kind === 'strength' ? 'Strength' : 'Check'}: {h.metric}.</b> <span className="muted">{h.text}</span></span></li>))}</ul>
+                )}
+                {(r.industry_risks ?? []).length > 0 && (<>
+                  <div className="mt-3 text-[11px] font-semibold uppercase tracking-wide muted">Industry risks{r.industry_name ? ` (${r.industry_name})` : ''}</div>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-slate-600 dark:text-slate-300">{r.industry_risks!.map((x) => <li key={x}>{x}</li>)}</ul>
+                </>)}
+              </div>
+            ))}
+          </div>
+          {q.data?.benchmark_note && <p className="mt-3 text-xs muted">{q.data.benchmark_note} Shareholding is shown only where it has been entered from the exchange filing on the company's Ownership tab.</p>}
         </Card>
         <div className="grid gap-5 lg:grid-cols-2">
           <Card title="Revenue indexed to 100" subtitle="First available fiscal year = 100; puts different-sized companies on one scale">

@@ -148,7 +148,7 @@ with tabs[1]:
             st.markdown("##### 3 · Result")
             updown = res.per_share / price - 1 if price else None
             ui.kpis([
-                {"label": "Intrinsic value / share", "value": F.inr(res.per_share)},
+                {"label": "Estimated value / share (model)", "value": F.inr(res.per_share)},
                 {"label": "Market price", "value": F.inr(price)},
                 {"label": "Model vs market", "value": F.pct(updown, signed=True) if updown is not None else F.MISSING,
                  "sign": 1 if updown and updown > 0 else -1 if updown else 0,

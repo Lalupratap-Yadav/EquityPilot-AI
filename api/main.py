@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
 
 
-app = FastAPI(title="EquityPilot AI API", version="2.0.0", lifespan=lifespan,
+app = FastAPI(title="EquityPilot AI API", version="2.1.0", lifespan=lifespan,
               description="Indian equity research platform API. Educational use; not investment advice.")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SessionMiddleware, secret_key=secret_key(), session_cookie="ep_session", max_age=60 * 60 * 24 * 365,
