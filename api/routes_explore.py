@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import json
+import logging
+import threading
+import time
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from equitypilot import db
+from equitypilot import config, db
 from equitypilot.analytics import bank as B
 from equitypilot.analytics.screener import METRIC_COLUMNS, PRESETS, apply_filters, company_metrics, universe_metrics
 from equitypilot.content.industries import BY_ID, INDUSTRIES, industry_of
@@ -17,10 +20,11 @@ from equitypilot.data import marketdata as M
 from equitypilot.data import repository as repo
 from equitypilot.data import securities as S
 
-from .core import clean, current_user, not_found, ttl_cache
+from .core import clean, current_user, not_found
 from .routes_market import universe_snapshot
 
 router = APIRouter(prefix="/api", tags=["explore"])
+log = logging.getLogger("equitypilot.api")
 
 COLLECTIONS = [
     {"id": "quality", "title": "Quality compounders", "description": "ROE and ROCE above 15%, low debt, 8%+ revenue CAGR",
@@ -35,13 +39,78 @@ COLLECTIONS = [
 ]
 
 
-@ttl_cache(600)
-def metrics_frame() -> pd.DataFrame:
+# ------------------------------------------------------------------ universe metrics (stale-while-revalidate)
+# Computing ratios for the whole universe takes minutes (≈1 s per company), so the last result is kept in memory and
+# on disk, served immediately, and recomputed in the background; only one computation runs at a time.
+METRICS_TTL = 600
+_SNAPSHOT = config.DATA_DIR / "cache" / "universe_metrics.json"
+_mf_lock = threading.Lock()          # held while computing
+_mf_state: dict = {"df": None, "at": 0.0}
+
+
+def _compute_metrics() -> pd.DataFrame:
     df = universe_metrics()
     df["industry_id"] = [industry_of(s, sec, ind) for s, sec, ind in zip(df["symbol"], df["sector"], df["industry"])]
     cats = S.category_map()
     df["category"] = [cats.get(s.rsplit(".", 1)[0], (None, None))[0] if not s.startswith("SAMPLE-") else None for s in df["symbol"]]
     return df
+
+
+def _refresh_metrics() -> pd.DataFrame | None:
+    if not _mf_lock.acquire(blocking=False):
+        return None                  # another thread is already computing
+    try:
+        df = _compute_metrics()
+        _mf_state.update(df=df, at=time.time())
+        try:
+            _SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _SNAPSHOT.with_suffix(".tmp")
+            tmp.write_text(df.to_json(orient="records", date_format="iso"), encoding="utf-8")
+            tmp.replace(_SNAPSHOT)
+        except OSError as exc:
+            log.warning("could not save metrics snapshot: %s", exc)
+        return df
+    finally:
+        _mf_lock.release()
+
+
+def _load_snapshot() -> pd.DataFrame | None:
+    try:
+        df = pd.DataFrame(json.loads(_SNAPSHOT.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return None
+    if df.empty or "symbol" not in df:
+        return None
+    df["is_sample"] = df["is_sample"].astype(bool)
+    _mf_state.update(df=df, at=_SNAPSHOT.stat().st_mtime)
+    return df
+
+
+def metrics_frame(wait: bool = False) -> pd.DataFrame:
+    """Universe metrics. Returns cached (possibly stale) data at once and refreshes in the background;
+    blocks only when nothing has ever been computed, or when wait=True (background warmer)."""
+    df = _mf_state["df"] if _mf_state["df"] is not None else _load_snapshot()
+    fresh = df is not None and time.time() - _mf_state["at"] < METRICS_TTL
+    if fresh:
+        return df
+    if df is None or wait:
+        out = _refresh_metrics()
+        if out is not None:
+            return out
+        with _mf_lock:               # someone else is computing - wait for their result
+            pass
+        return _mf_state["df"] if _mf_state["df"] is not None else _compute_metrics()
+    if not _mf_lock.locked():
+        threading.Thread(target=_refresh_metrics, name="metrics-refresh", daemon=True).start()
+    return df
+
+
+def invalidate_metrics() -> None:
+    """Mark metrics stale (e.g. after a company is tracked or refreshed); the next read triggers a background refresh."""
+    _mf_state["at"] = 0.0
+
+
+metrics_frame.cache_clear = invalidate_metrics  # type: ignore[attr-defined]
 
 
 def _cards(df: pd.DataFrame, n: int = 12) -> list[dict]:

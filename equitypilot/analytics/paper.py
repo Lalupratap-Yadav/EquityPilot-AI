@@ -29,9 +29,9 @@ class TradeError(ValueError):
 
 def account(uid: int) -> dict:
     df = db.read_df(db.select(db.paper_accounts).where(db.paper_accounts.c.user_id == uid))
-    if df.empty:
-        db.execute(db.insert(db.paper_accounts).values(user_id=uid, cash=INITIAL_CASH, initial=INITIAL_CASH,
-                                                       started_at=db.utcnow(), resets=0))
+    if df.empty:   # idempotent: parallel first requests must not collide on the primary key
+        db.upsert(db.paper_accounts, [{"user_id": uid, "cash": INITIAL_CASH, "initial": INITIAL_CASH,
+                                       "started_at": db.utcnow(), "resets": 0}], ["user_id"], update=False)
         df = db.read_df(db.select(db.paper_accounts).where(db.paper_accounts.c.user_id == uid))
     return df.iloc[0].to_dict()
 
@@ -83,7 +83,7 @@ def apply_corporate_actions(uid: int) -> int:
     for sym in rows.loc[rows["kind"] == "BUY", "symbol"].unique():
         first = pd.to_datetime(rows.loc[(rows["symbol"] == sym) & (rows["kind"] == "BUY"), "ts"]).min()
         last_ref = db.get_setting(f"actions_refreshed:{sym}")
-        if not last_ref or datetime.utcnow() - datetime.fromisoformat(last_ref) > timedelta(days=1):
+        if not last_ref or db.utcnow() - datetime.fromisoformat(last_ref) > timedelta(days=1):
             M.refresh_actions(sym)
         acts = M.get_actions(sym, since=first.date())
         for _, a in acts.iterrows():

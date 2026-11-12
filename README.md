@@ -1,110 +1,128 @@
 # EquityPilot AI
 
-**Indian Equity Research & Financial Intelligence Platform**
+**Research Smarter. Understand Markets. Make Informed Decisions.**
 
-EquityPilot AI is a research workbench for Indian listed companies. It brings financial statements, ratio analysis, valuation (multiples and DCF), screening, technical and risk analysis, news and disclosures, a source-grounded AI research assistant, PDF research reports, portfolio analytics and a NISM Series XV learning centre into one Streamlit application.
+EquityPilot AI is an Indian equity research platform. It covers:
+- discovering companies and following markets, industries and news
+- financial analysis, valuation and screening
+- a source-grounded AI research assistant that can also answer questions about your own PDFs
+- PDF research reports, portfolio analytics and a learning centre
+- **Virtual Invest**, a paper-trading simulator with ₹10,00,000 of virtual money
 
-It was built to demonstrate equity-research practice as taught in the NISM Series XV (Research Analyst) curriculum and MBA finance: transparent formulas, labelled data sources, explicit assumptions and no unsupported recommendations.
+It applies equity-research practice from the NISM Series XV (Research Analyst) curriculum and MBA finance: transparent formulas, labelled data sources, explicit assumptions and no buy or sell recommendations.
 
-![Dashboard](docs/screenshots/01_dashboard.png)
+![Home](docs/screenshots/v2_home.png)
 
 ---
 
-## Features
+## What's inside
 
-| Module | What it does |
+| Area | Pages and features |
 |---|---|
-| **Dashboard** | NIFTY 50, SENSEX, NIFTY Bank, NIFTY IT and India VIX (delayed); company search; watchlist; gainers, losers and sector moves; recent activity |
-| **Company Research** | Profile, key metrics, business-model notes, revenue segments, shareholding (with pledge flags), editable peer group, official NSE/BSE/SEBI links; for banks, a **Bank metrics** tab (NIM, GNPA/NNPA, PCR, CRAR, CASA, cost-to-income, credit cost) with trends and screening bands |
-| **Financial Analysis** | Income statement, balance sheet and cash flow (annual and quarterly) in ₹ crore; 25 ratios with formulas; DuPont; Piotroski F-score; trends; CAGR; **quarterly results** (QoQ/YoY, margins, missing-quarter flags); data-quality checks; Excel/CSV export |
-| **Valuation** | P/E, P/B, EV/EBITDA with history; CAPM/WACC builder; FCFF DCF with every step shown; bear/base/bull scenarios; WACC × g sensitivity; reverse DCF; peer-relative valuation; justified P/B for banks |
-| **Stock Screener** | Presets (quality compounders, low-debt value, growth, cash generators, dividend payers) plus custom filters on ROE, ROCE, D/E, P/E, growth, margins and more; open, compare or watchlist results; CSV and formatted Excel export |
-| **Company Comparison** | 2–5 companies side by side; warnings when fiscal periods, statement bases or currencies differ; indexed revenue and price-performance charts; CSV and Excel export |
-| **Technical Analysis** | Candlesticks; SMA/EMA/Bollinger overlays; volume; RSI; MACD; returns; volatility; drawdown; ATR; beta vs NIFTY 50 |
-| **Risk Analysis** | Rule-based checks for debt, liquidity, profitability, cash flow, concentration and market risk, each with its threshold shown; Altman Z″; sector considerations; your own risk notes |
-| **News & Disclosures** | Third-party headlines with publisher and time; a log of exchange disclosures with filing links; uploaded documents; official links |
-| **AI Research Assistant** | Answers about the company's data, ratios, valuation, risks and uploaded annual reports, citing numbered sources. Answers are split into facts, calculations, assumptions, interpretation and limitations. Free offline engine by default; Claude API or Ollama optional |
-| **Report Generator** | Professional PDF with tables, charts, DCF assumptions, scenarios, sensitivity, risk table, source list and SEBI-aware disclosures |
-| **Portfolio Analysis** | Holdings (lots), value, P&L, XIRR, allocation by stock and sector, concentration (HHI, effective N), volatility, Sharpe, drawdown, beta, diversification ratio, risk contribution, correlation |
-| **Learning Centre** | 8 modules (markets, research-analyst regulation, statements, ratios, valuation, technicals, risk, corporate actions) with formulas, live worked examples, 39 quiz questions and a glossary |
-| **Data Manager** | Source register; cache status; refresh; statement upload (template provided) with review and correction; NSE/BSE price CSV upload; PDF text and table extraction with search |
-| **How to Use** | Interactive quick-start tour with progress, a guide for every module, data-label legend and FAQ |
+| **Discover** | **Home**: indices, market movers, sector heat map, watchlist, recently viewed and Virtual Invest snapshot.<br>**Explore**: themed collections, AMFI large/mid/small-cap rows and trending companies.<br>**Industry Intelligence Centre**: 15 industries, each with drivers, risks, valuation approach and industry-specific metrics.<br>**Market Tracker**: candlestick, line and area charts from 1 day to max, with streaming quote updates. |
+| **Research** | **Company pages**: overview, chart, statements, quarterly results, ratios, technicals, risk flags, peers, shareholding, bank metrics, news and notes.<br>**Equity Research** workspace.<br>**Valuation Lab**: DCF, scenarios, sensitivity, reverse DCF, peer multiples and justified P/B.<br>**Screener** with saved screens, and **Compare** for 2–5 companies.<br>**News & Market Intelligence**: NSE filings and results, RBI, SEBI and global markets.<br>**AI Assistant**, **Documents** (PDF question-answering with page citations) and **Reports** (PDF). |
+| **My space** | **Watchlists**: several lists, with notes and price alerts that raise notifications.<br>**Portfolio**: value, XIRR, allocation, risk and correlation.<br>**Virtual Invest**: practice orders, P&L, allocation, performance vs NIFTY 50, achievements, an opt-in leaderboard and reset. |
+| **Learn** | **Learning Centre**: 8 modules with quizzes and saved progress, plus a glossary.<br>**How to Use** guide.<br>**Settings**: account, theme, AI engine and costs, data sources, and export of your data. |
 
-| Valuation (DCF) | Risk analysis | AI assistant |
+Search for any of the **5,552 listed securities** from anywhere with `Ctrl+K` (or `/`). Opening a company that isn't tracked yet fetches its data on demand.
+
+| Company | Valuation Lab | Virtual Invest |
 |---|---|---|
-| ![DCF](docs/screenshots/04_valuation_dcf.png) | ![Risk](docs/screenshots/07_risk_analysis.png) | ![AI](docs/screenshots/10_ai_assistant.png) |
+| ![Company](docs/screenshots/v2_company.png) | ![Valuation](docs/screenshots/v2_valuation.png) | ![Virtual Invest](docs/screenshots/v2_invest.png) |
 
 ---
 
-## Data integrity principles
+## Data integrity
 
-1. **No fabricated numbers.** Figures come from a named source or from a calculation shown on screen. Missing data stays missing (shown as "—"); it is never filled with estimates.
-2. **Every number is labelled**: `SAMPLE` · `DELAYED` · `HISTORICAL` · `THIRD-PARTY` · `OFFICIAL (UPLOADED)` · `USER-ENTERED` · `CALCULATED` · `ASSUMPTION`, together with its source, period, statement basis and retrieval time (IST).
-3. **Honest sourcing**:
-   - **Yahoo Finance (via `yfinance`)** is a secondary source used for delayed quotes, price history, summarised statements (4–5 years) and headlines.
-   - **NSE** has no public developer API and blocks automated access (verified: HTTP 403). EquityPilot does **not** scrape NSE or BSE. It links to their official pages and lets you upload downloaded files.
-   - **Official figures** from annual reports and results can be uploaded (CSV/Excel template, or PDF extraction), reviewed, corrected and stored with your source citation and the consolidated or standalone basis.
-4. **Edge cases handled explicitly.**
-   - Banks: EV/EBITDA, D/E and FCFF DCF are marked not meaningful, and justified P/B is offered instead.
-   - Statements reported in USD (e.g. Infosys, HCLTech on Yahoo): price multiples are disabled, while ratios stay valid.
-   - Fiscal-year changes (e.g. Nestlé India): year-on-year growth is left blank across the irregular period.
-   - Balance-sheet mismatches are flagged.
-5. **Works offline.** Five clearly watermarked **fictional** sample companies (including a sample bank) let every feature run without internet access, and they drive the automated tests.
+1. **Nothing is invented.** Every figure comes from a named source or a calculation shown on screen. Missing data shows as "—".
+2. **Every number is labelled:** `DELAYED` · `LAST CLOSE` · `HISTORICAL` · `THIRD-PARTY` · `OFFICIAL (UPLOADED)` · `USER-ENTERED` · `CALCULATED` · `ASSUMPTION` · `SAMPLE`. Each label comes with the source, period, statement basis and retrieval time in IST.
+3. **Only legitimate sources** (all verified in [docs/AUDIT.md](docs/AUDIT.md)):
+
+   | Source | Used for |
+   |---|---|
+   | NSE public RSS feeds | Announcements and results, with links to the filings |
+   | NSE `EQUITY_L.csv` | Listed securities |
+   | AMFI market-cap list | Official large/mid/small-cap categories |
+   | RBI and SEBI RSS | Regulatory and economic updates |
+   | Yahoo Finance via `yfinance` | Delayed quotes, intraday and historical prices, statements, corporate actions, headlines |
+
+   nseindia.com pages block automated clients (HTTP 403), so EquityPilot does not scrape them.
+4. **No real-time prices.** Real-time NSE/BSE data needs a licensed vendor or a broker API on your own trading account, at roughly ₹0–500 per month depending on the broker. Prices go through a pluggable `MarketDataProvider`, so a broker adapter can be added later. Until then every price is labelled delayed.
+5. **Edge cases are handled explicitly:**
+   - Banks get bank metrics and justified P/B in place of EV/EBITDA and FCFF DCF.
+   - Multiples are disabled for statements reported in USD.
+   - Growth is left blank across a fiscal-year change.
+   - Balance sheets that don't balance are flagged.
+6. **Works offline.** Five watermarked fictional sample companies, including a bank, let every feature run without internet access.
 
 ---
 
 ## Quick start
 
-**Requirements:** Python 3.11 or newer (developed on 3.14) and Git.
+**Requirements:** Python 3.11+ (developed on 3.14) and Node.js 20+ (developed on 24).
 
 ```bash
-git clone <your-repo-url> EquityPilot-AI
-cd EquityPilot-AI
+git clone <your-repo-url> EquityPilot-AI && cd EquityPilot-AI
 python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
+.venv\Scripts\activate              # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
+
+cd web && npm install && npm run build && cd ..
+python -m uvicorn api.main:app --port 8000
 ```
 
-Open http://localhost:8501. On first start the database is created and the sample companies load automatically. To work with real data, open the **Dashboard** and either click **Load default research universe** (44 large NSE companies, about 2–4 minutes) or add any NSE symbol.
+Open **http://localhost:8000**. On first start:
+- the database is created and the sample companies load;
+- a background task fetches delayed quotes, the official feeds and the securities list;
+- the first universe-metrics computation takes a few minutes, and Explore and Screener show a loading state until it finishes. After that, a saved snapshot loads immediately.
 
-**Offline mode** (sample data only, no network calls):
+**Frontend development:** run `cd web && npm run dev` and open http://localhost:5173. Vite proxies `/api` to port 8000.
+
+**Docker** (the Dockerfile is included but hasn't been build-tested here, because Docker isn't installed on the development machine):
 
 ```bash
-# Windows PowerShell
-$env:EQUITYPILOT_OFFLINE="1"; streamlit run app.py
-# macOS/Linux
-EQUITYPILOT_OFFLINE=1 streamlit run app.py
+docker build -t equitypilot .
+docker run -p 8000:8000 -v equitypilot-data:/app/data equitypilot
 ```
 
-### Run the tests
+**Classic workbench:** the original Streamlit app still works with `streamlit run app.py` (http://localhost:8501). Both apps share the same database and core.
+
+### Configuration (environment variables)
+
+| Variable | Purpose |
+|---|---|
+| `EQUITYPILOT_OFFLINE=1` | Sample data only; no network calls |
+| `EQUITYPILOT_SECRET` | Session-signing key. If unset, one is generated in `data/secret.key` |
+| `EQUITYPILOT_SECURE_COOKIES=1` | Mark cookies `Secure` when served over HTTPS |
+| `EQUITYPILOT_DATA_DIR`, `EQUITYPILOT_DB` | Location of data and the SQLite database |
+| `EQUITYPILOT_DATABASE_URL` | Use PostgreSQL instead of SQLite. The code path exists but hasn't been tested against a live server |
+| `EQUITYPILOT_NO_WARMER=1` | Disable the background refresh task |
+| `ANTHROPIC_API_KEY` + `EQUITYPILOT_SHARED_AI_KEY=1` | Paid and optional. Lets **all** users of the server use your Claude key. Without the opt-in flag, each user enters their own key in Settings |
+
+### Tests
 
 ```bash
-python -m pytest -q
+python -m pytest -q          # offline, temporary database
+cd web && npx tsc -b         # TypeScript type-check
 ```
 
-There are 130 tests. They cover:
-- Hand-calculated checks of the ratios, DCF, WACC, reverse DCF, technical indicators, Altman Z″ and XIRR.
-- The upload parsers and PDF extraction.
-- The assistant's grounding rules: every figure must be traceable to a source, and recommendation requests are declined.
-- PDF report generation.
-- A Streamlit `AppTest` render of every page, for every sample company.
+The suite covers:
+- Analytics checked against hand calculations: ratios, DCF, WACC, reverse DCF, indicators, Altman Z″ and XIRR.
+- Upload parsers and the assistant's grounding rules.
+- PDF reports and a render of every Streamlit page.
+- API tests for:
+  - guest sessions and per-user data isolation (watchlists, documents)
+  - registration and login (scrypt hashing)
+  - Virtual Invest rules: no overspending or overselling, plus split and dividend adjustment
+  - alerts, DCF, bank metrics, shareholding entry and document question-answering
+  - the refusal to give recommendations, plus security headers and input validation
 
-The tests run offline against a temporary database.
-
-### Scheduled data refresh (command line)
+### Command-line refresh
 
 ```bash
-python -m equitypilot status                    # what is cached and when it was retrieved
-python -m equitypilot refresh                   # quotes, statements and prices for the screener universe
-python -m equitypilot refresh --quotes-only     # fast: delayed quotes only
-python -m equitypilot refresh --news --symbols TCS INFY
+python -m equitypilot status
+python -m equitypilot refresh [--quotes-only] [--news] [--symbols TCS INFY]
 ```
-
-Schedule it with Windows Task Scheduler or cron (see docs/DEPLOYMENT.md). It returns a non-zero exit code if any company fails to refresh.
 
 ---
 
@@ -112,60 +130,56 @@ Schedule it with Windows Task Scheduler or cron (see docs/DEPLOYMENT.md). It ret
 
 | Engine | Cost | Notes |
 |---|---|---|
-| **Offline analyst** (default) | Free | Deterministic and rule-based. Uses only the cited sources; extractive summaries of uploaded PDFs |
-| **Claude API** (optional) | Paid per use | Needs your own Anthropic API key with billing; **a Claude Pro chat subscription does not include API credits**. Indicative cost: about $0.001 (Haiku 5.5) to about $0.05 (Opus 5.5) per question with company data; costs are shown in-app before enabling |
-| **Ollama** (optional) | Free | Runs an open-source model locally (`ollama pull llama3.1:8b`). Smaller models follow grounding rules less reliably |
+| **Offline analyst** (default) | Free | Deterministic. Quotes facts and calculations from cited sources and extracts relevant passages from your PDFs |
+| **Claude API** (optional) | Paid per use | Uses your own Anthropic API key. Settings shows the estimated cost per question before you enable it, and you must tick a consent box. The key stays in your session cookie and is never written to the database |
+| **Ollama** (optional) | Free | Runs a local open-source model |
 
-All engines receive the same numbered, provenance-tagged context. For LLM answers, a grounding check reports how many figures in the answer can be traced back to the sources. The API key is read from `.streamlit/secrets.toml` or the `ANTHROPIC_API_KEY` environment variable, or entered for the session only, and is never stored.
+Every engine gets the same numbered, source-tagged context. LLM answers go through a grounding check that reports any figures it can't trace to a source. The assistant declines buy, sell or hold requests.
 
 ---
 
 ## Architecture
 
 ```
-app.py                      entry point: theme, navigation, global company picker
-equitypilot/
-  config.py                 paths, data-type labels, freshness rules
-  db.py                     SQLite schema (SQLAlchemy Core) - provenance columns on every table
-  formatting.py             ₹ / crore / % formatting, IST timestamps, FY labels, input sanitising
-  data/                     schema · universe · yahoo provider · official links · sample data · uploads · repository
-  analytics/                ratios · valuation · screener · technicals · risk · bank · portfolio
-  ai/                       context (grounded sources) · offline analyst · providers (Claude / Ollama)
-  reports/                  pdf_report (ReportLab + matplotlib) · excel_export (formatted workbooks)
-  cli.py                    command-line refresh/status (python -m equitypilot)
-  content/                  glossary · learning modules & quizzes
-  ui/                       theme (CSS) · components · charts (Plotly)
-views/                      one file per page
-tests/                      pytest suite (offline)
-docs/                       deployment guide, demo script, screenshots
+api/            FastAPI app: routers for market, company, explore, user, invest, research;
+                guest sessions, rate limiting, security headers; serves web/dist
+web/            React 19 + TypeScript + Vite + Tailwind v4 SPA (TanStack Query, lightweight-charts, Recharts)
+equitypilot/    framework-independent core (shared with the Streamlit workbench)
+  data/         securities master · feeds (NSE/RBI/SEBI) · marketdata (provider, quote cache, indices, corporate actions)
+                yahoo · repository · uploads · sample
+  analytics/    ratios · valuation · screener · technicals · risk · bank · portfolio · paper (Virtual Invest)
+  ai/           grounded context · offline analyst · providers · rag (BM25 passages with page numbers)
+  content/      industries (15) · learning modules · glossary
+  reports/      PDF and Excel
+  users.py · db.py · config.py · formatting.py
+app.py, views/  Streamlit classic workbench
+tests/          pytest suite
 ```
 
-All pages read data through `data/repository.py`. It is cache-first: it serves from SQLite and refreshes from the provider when data is stale. A provider failure never crashes a page; cached data is shown with its retrieval time.
+Design notes:
+- **Cache first.** Pages read from SQLite and in-process caches. A background task refreshes quotes (every 90 s while the market is open) and feeds.
+- **Universe metrics** are stale-while-revalidate and persisted to disk.
+- **Live updates.** Quotes are pushed to the browser over a WebSocket.
+- **Database.** SQLAlchemy Core with additive migrations runs on SQLite by default, and Postgres is optional.
 
-**Stack:** Python · Streamlit · pandas/NumPy · Plotly · SQLite/SQLAlchemy · yfinance · pdfplumber · openpyxl · ReportLab · matplotlib · Anthropic SDK (optional) · pytest
-
----
-
-## Deployment
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Streamlit Community Cloud (free), Hugging Face Spaces and local network options.
-
-## Demo
-
-See [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) for a 7-minute walkthrough for interviews.
+See [docs/AUDIT.md](docs/AUDIT.md) for why FastAPI + React was chosen and why Redis and PostgreSQL were not needed by default.
 
 ---
+
+## Deployment and demo
+
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md): GitHub, Docker or any container host, and the Streamlit Cloud option for the classic workbench.
+- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md): a 7-minute walkthrough.
 
 ## Known limitations
 
-- Market data is delayed or end-of-day; there is no real-time feed.
-- Yahoo Finance typically provides 4–5 fiscal years of statements and does not state the consolidated/standalone basis.
-- Exchange disclosures cannot be fetched automatically (no public API); they are logged manually with links.
-- PDF extraction needs text-based PDFs. Scanned documents are detected, but OCR is not included (it would need a system install such as Tesseract).
-- Bank metrics (NIM, GNPA, CRAR, ...) are not available from the provider and must be entered from disclosures.
-- Portfolio risk statistics apply current weights to past returns (an ex-post approximation).
-- On free cloud hosting, the SQLite database resets when the app restarts.
+- **Prices** are delayed or end-of-day; there's no real-time feed (see above).
+- **Statements** from Yahoo cover 4–5 years and don't state whether they're consolidated or standalone. Shareholding and bank metrics have to be entered from filings.
+- **PDFs** must contain text. Scanned PDFs are detected, but OCR isn't included.
+- **Alerts** are checked against the latest delayed price while the server is running. There are no push or SMS notifications.
+- **Portfolio risk** statistics apply today's weights to past returns.
+- **Universe metrics** take a few minutes to compute on a fresh install, roughly 1 s per tracked company.
 
 ## Disclaimer
 
-EquityPilot AI is an **educational research tool**. It is not investment advice and does not issue buy, sell or hold recommendations. Neither the tool nor its author is registered with SEBI as a Research Analyst or Investment Adviser. Data may be delayed or inaccurate; verify against official filings before relying on it.
+EquityPilot AI is an **educational research tool**. It is not investment advice and does not issue buy, sell or hold recommendations. Virtual Invest uses virtual money only and places no real orders. Neither the tool nor its author is registered with SEBI as a Research Analyst or Investment Adviser. Data may be delayed or inaccurate, so verify it against official filings before relying on it.

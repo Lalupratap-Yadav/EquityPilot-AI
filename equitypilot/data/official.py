@@ -30,7 +30,7 @@ OFFICIAL_SOURCES = [
      "access": "Website / releases. Used for context only."},
     {"name": "Company investor relations", "url": None,
      "use": "Annual reports, investor presentations, quarterly results (primary source)",
-     "access": "Download PDFs from the company's website and upload them in the Data Manager."},
+     "access": "Download PDFs from the company's website and upload them in Documents (Data Manager in the classic workbench)."},
     {"name": "Yahoo Finance (via yfinance)", "url": "https://finance.yahoo.com/",
      "use": "Delayed quotes, price history, summarised statements, news headlines",
      "access": "Secondary third-party source accessed through the open-source yfinance library; "

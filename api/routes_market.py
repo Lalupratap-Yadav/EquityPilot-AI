@@ -24,11 +24,11 @@ def tracked_real() -> list[str]:
     return [s for s in c["symbol"] if not s.startswith("SAMPLE-")]
 
 
-@ttl_cache(60)
+@ttl_cache(30)
 def universe_snapshot() -> list[dict]:
     comps = repo.list_companies()
     comps = comps[~comps["is_sample"].astype(bool)]
-    quotes = M.QUOTES.get(comps["symbol"].tolist())
+    quotes = M.QUOTES.get(comps["symbol"].tolist(), stale_ok=True)   # background warmer keeps these fresh
     qdb = db.read_df(db.select(db.quotes.c.symbol, db.quotes.c.market_cap))
     mcap = dict(zip(qdb["symbol"], qdb["market_cap"]))
     out = []
@@ -53,6 +53,8 @@ def movers(n: int = Query(6, ge=1, le=20)):
     df = pd.DataFrame(rows)
     if df.empty:
         return {"gainers": [], "losers": [], "active": [], "breadth": None, "universe": 0}
+    for col in ("price", "change_pct", "volume"):
+        df[col] = pd.to_numeric(df.get(col), errors="coerce")
     df["turnover"] = df["price"] * df["volume"].fillna(0)
     adv, dec = int((df["change_pct"] > 0).sum()), int((df["change_pct"] < 0).sum())
     return clean({
@@ -146,7 +148,7 @@ async def ws_quotes(ws: WebSocket):
             except asyncio.TimeoutError:
                 pass
             if symbols:
-                data = await asyncio.to_thread(M.QUOTES.get, symbols)
+                data = await asyncio.to_thread(M.QUOTES.get, symbols, len(symbols) > 5)
                 await ws.send_json(clean({"type": "quotes", "quotes": data, "market": M.market_status()}))
     except WebSocketDisconnect:
         return

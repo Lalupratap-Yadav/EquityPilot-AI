@@ -1,56 +1,57 @@
 # EquityPilot AI: 7-minute interview demo
 
-**Goal:** show research judgement (not just coding) in 7 minutes. Each step has what to click and what to say. **Company:** TCS (or any company the interviewer names).
+**Goal:** show research judgement, not just coding, in 7 minutes. Each step says what to click and what to say.
+
+**Company:** TCS, or any company the interviewer names. Press `Ctrl+K` and type its name.
 
 **Before the interview**
-- Run `streamlit run app.py` and open the Dashboard.
-- Refresh the universe in the Data Manager.
-- Save a TCS DCF on the Valuation page.
-- Generate one PDF report as a backup.
+- Start the server (`python -m uvicorn api.main:app --port 8000`) 10 minutes early so quotes, feeds and metrics are warm.
+- Open http://localhost:8000.
+- Save a DCF for TCS in the Valuation Lab.
+- Buy a few shares in Virtual Invest.
+- Upload one annual-report PDF in Documents.
+- Keep a generated PDF report as a backup.
 
 ---
 
-### 1. The problem (30 s): Dashboard
-> "Retail and student analysts juggle exchange filings, screeners, spreadsheets and chatbots that invent numbers. I built one platform where every number has a source, a timestamp and a label, and where the AI is only allowed to cite those sources."
+### 1. The problem (30 s): Home
+> "Retail and student analysts juggle exchange filings, screeners, spreadsheets and chatbots that invent numbers. I built one platform where every number has a source, a timestamp and a label, and where the AI may only cite those sources."
 
-Point at the live NIFTY/SENSEX tiles and the source line under them: "Delayed data, labelled as such."
+Point at the index tiles and the **DELAYED** badge: "Real-time NSE data needs a licensed vendor or a broker API, so I label every price honestly instead of pretending."
 
-### 2. Data honesty (45 s): Data Manager → Sources & status
-> "NSE has no public API and blocks automated access, so I don't scrape it. Prices and summarised statements come from Yahoo Finance, labelled third-party. Official figures from annual reports can be uploaded, reviewed and stored with their citation and the consolidated or standalone basis."
+### 2. Discovery (45 s): Explore → Industries → Banking
+> "Over 5,500 listed securities are searchable, and the cap categories come from AMFI's official list. Each of the 15 industries explains its drivers and risks and the metrics that matter. For banks that's NIM, GNPA and CASA rather than EBITDA."
 
-Show the data-label legend. *Optional:* "Infosys reports in USD on Yahoo, so the app disables P/E for it rather than show a wrong number."
+### 3. Company and fundamentals (1 min): Company → Financials, then Quarterly
+> "TCS: ROE near 49% with almost no debt. DuPont shows it comes from margins and asset turnover, not leverage."
 
-### 3. Fundamentals (1 min): Financial Analysis → Ratios & DuPont
-> "TCS: ROE near 49% with almost no debt. DuPont shows it comes from margins and asset turnover, not leverage, which is high-quality ROE."
+Hover over a source note: "Every block says where the data came from and when it was retrieved."
 
-Hover over an ⓘ to show the formula. Open the **Data quality** tab: "The app checks that the balance sheet balances and flags irregular periods."
+### 4. Valuation (1.5 min): Valuation Lab
+> "WACC from CAPM, FCFF DCF with every step shown, then bear, base and bull scenarios."
 
-### 4. Valuation (1.5 min): Valuation → DCF → Scenarios & sensitivity
-> "WACC from CAPM: risk-free from the 10-year G-sec, beta, equity risk premium. Every step is visible, from FCFF to the EV-to-equity bridge."
+Point at the **terminal value share**: "Most of the value is terminal, so I never rely on one number."
 
-Point at **terminal value share of EV**: "About three-quarters of the value is terminal, so I never rely on one number."
+Show the **sensitivity grid** and the **reverse DCF**: "The price implies about X% growth versus a 3-year CAGR of about 6%. That's the question to debate."
 
-Show the **sensitivity grid**, then the **reverse DCF**: "The market price implies roughly X% growth versus a 3-year CAGR of about 6%. That's the question to debate."
+### 5. Market intelligence (45 s): News & Intelligence
+> "Exchange announcements and results come from NSE's official RSS feeds, with links to the filing PDFs and mapped to companies. RBI and SEBI updates sit alongside. I don't scrape anything: nseindia.com blocks bots, so I use what the exchange publishes for subscription."
 
-### 5. Screening and comparison (1 min): Stock Screener → "Quality compounders" → select 3 → Compare selected
-> "Screening 44 large caps on ROE, ROCE, leverage and growth, then comparing side by side. Stars mark the best value, but the app warns when fiscal years, bases or currencies differ."
-
-### 6. Risk (30 s): Risk Analysis (try Tata Steel)
-> "Rule-based, with every threshold shown. Tata Steel's Altman Z″ is in the distress zone and leverage is moderate. It's a screening flag, not a verdict."
-
-### 7. AI assistant (1 min): AI Research Assistant
-Click **"Is the balance sheet strong?"**
-> "Answers are split into facts with source IDs, calculations with formulas, and a clearly labelled interpretation. It's free and offline by default. The Claude API is optional and its cost is shown first."
+### 6. AI assistant with documents (1 min): AI Assistant → tick the uploaded annual report
+Ask **"What does the report say about risks?"**
+> "Answers cite numbered sources and page numbers. It's free and offline by default. Claude is optional, the cost per question is shown first, and figures are checked against the sources."
 
 Then type **"Should I buy TCS?"**
-> "It declines. In India, recommendations require SEBI registration. I designed it to show the evidence instead."
+> "It declines. In India, recommendations need SEBI registration, so it shows the evidence instead."
 
-### 8. Deliverable (30 s): Report Generator → Generate PDF
-Open the PDF:
-> "A research note with tables, charts, DCF assumptions, scenarios, a source list and SEBI-aware disclosures."
+### 7. Virtual Invest (45 s)
+> "Everyone gets ₹10 lakh of virtual money. Orders fill at the latest delayed price with that price's timestamp, and the app blocks overspending and overselling. Splits and dividends are applied automatically, and performance is compared with the NIFTY 50. The tips are educational: diversification and concentration, not trade ideas. Leaderboard participation is opt-in."
+
+### 8. Deliverable (30 s): Reports → Generate PDF
+> "A research note with tables, charts, my DCF assumptions, a source list and SEBI-aware disclosures."
 
 **Close:**
-> "It's tested with over 100 automated tests, including hand-calculated DCF and ratio checks, and it works offline with clearly labelled sample data."
+> "A FastAPI backend reuses a tested Python analytics core, with a React/TypeScript frontend on top. Automated tests cover hand-calculated DCF and ratio checks and per-user data isolation, and everything works offline with labelled sample data."
 
 ---
 
@@ -58,9 +59,10 @@ Open the PDF:
 
 | Question | Answer pointers |
 |---|---|
-| Why not scrape NSE? | No public API, access is blocked, and terms of use matter. The honest alternative is links plus uploads. |
-| How do you stop the AI hallucinating? | It only sees numbered source blocks and must cite them. The offline engine is deterministic. LLM answers get a grounding check that traces each figure back to a source. Recommendation requests are refused. |
+| Why not scrape NSE? | There's no public API, access is blocked and the terms matter. I use NSE's published RSS feeds and equity list, AMFI's list, and user uploads. |
+| How do you stop the AI hallucinating? | It sees only numbered source blocks and must cite them. Document passages carry page numbers. The offline engine is deterministic, LLM answers get a grounding check, and recommendation requests are refused. |
 | Why FCFF and not FCFE? | FCFF is independent of capital structure and pairs with WACC. For banks I use justified P/B, because debt is operating capital. |
-| Biggest valuation risk? | The terminal value share. That's why the sensitivity grid, scenarios and reverse DCF are there. |
-| How would you scale it? | Licensed data vendor APIs, Postgres, scheduled refresh jobs, user accounts, and quarterly-result alerts. |
-| What did you learn? | Data quality issues dominate: currencies, fiscal-year changes, statement basis, missing items. Handling them honestly mattered more than adding features. |
+| How would you get real-time prices? | Through a broker API on the user's own account (for example Kite Connect at about ₹500/month) or a licensed vendor. The market-data provider interface is pluggable, so it's an adapter, not a rewrite. |
+| Why FastAPI + React instead of Streamlit? | Per-user sessions, a search palette, routing, theming and WebSocket push. The analytics core was kept unchanged, so the tests still apply. |
+| How would you scale it? | Postgres (already supported through SQLAlchemy), a job queue for refreshes, and Redis only once there are several server processes. |
+| What did you learn? | Data quality dominates: currencies, fiscal-year changes, statement basis, missing items. Handling them honestly mattered more than adding features. |

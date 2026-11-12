@@ -61,6 +61,8 @@ def track(symbol: str, request: Request):
     if not ok:
         raise HTTPException(502, msg)
     M.refresh_actions(sym)
+    from .routes_explore import invalidate_metrics
+    invalidate_metrics()
     return {"symbol": sym, "message": msg}
 
 
@@ -308,6 +310,38 @@ def save_bank(symbol: str, body: BankEntry, request: Request):
     return {"saved": n}
 
 
+class ShareholdingRow(BaseModel):
+    category: str = Field(min_length=2, max_length=60)
+    pct: float = Field(ge=0, le=100)
+    pledged_pct: float | None = Field(None, ge=0, le=100)
+
+
+class ShareholdingEntry(BaseModel):
+    period: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    rows: list[ShareholdingRow] = Field(min_length=1, max_length=12)
+    source_url: str | None = Field(None, max_length=500)
+
+
+@router.post("/companies/{symbol}/shareholding")
+def save_shareholding(symbol: str, body: ShareholdingEntry, request: Request):
+    """User-entered shareholding pattern from an exchange filing (SEBI LODR Reg. 31). Replaces that quarter."""
+    current_user(request)
+    c = _company_or_404(symbol)
+    if c.get("is_sample"):
+        raise HTTPException(400, "Sample companies are read-only.")
+    total = sum(r.pct for r in body.rows)
+    if not 99.0 <= total <= 101.0:
+        raise HTTPException(400, f"Holdings add up to {total:.2f}% - they should total 100%.")
+    sh = db.shareholding
+    db.execute(db.delete(sh).where(sh.c.symbol == symbol).where(sh.c.period == body.period))
+    db.execute(db.insert(sh), [{
+        "symbol": symbol, "period": body.period, "category": r.category.strip(), "pct": r.pct, "pledged_pct": r.pledged_pct,
+        "source": "User-entered from exchange filing", "source_url": F.safe_url(body.source_url),
+        "data_type": "user_entered", "fetched_at": db.utcnow()} for r in body.rows])
+    db.log_activity("Saved shareholding", f"{symbol} {body.period}")
+    return {"saved": len(body.rows)}
+
+
 class Notes(BaseModel):
     business_model: str = ""
     products: str = ""
@@ -338,4 +372,6 @@ def refresh(symbol: str, request: Request):
     msgs = [repo.refresh_company(symbol)[1], repo.refresh_financials(symbol)[1], repo.refresh_prices(symbol)[1],
             repo.refresh_news(symbol)[1]]
     M.refresh_actions(symbol)
+    from .routes_explore import invalidate_metrics
+    invalidate_metrics()
     return {"messages": msgs}

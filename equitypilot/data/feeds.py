@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+from collections import defaultdict
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -108,19 +110,40 @@ def parse_rss(content: bytes) -> list[dict]:
     return items
 
 
+FAIL_BACKOFF = timedelta(minutes=10)     # after a failed download, don't ask the publisher again for a while
+_locks: dict[str, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _recent(setting: str, within: timedelta) -> bool:
+    ts = db.get_setting(setting)
+    return bool(ts) and db.utcnow() - datetime.fromisoformat(ts) < within
+
+
 def refresh_feed(key: str, force: bool = False) -> tuple[bool, str]:
     cfg = FEEDS[key]
-    last = db.get_setting(f"feed_refreshed:{key}")
-    if not force and last and datetime.utcnow() - datetime.fromisoformat(last) < timedelta(minutes=cfg["ttl"]):
+    if not force and _recent(f"feed_refreshed:{key}", timedelta(minutes=cfg["ttl"])):
         return True, "cached"
     if config.OFFLINE:
         return False, "offline"
+    if not force and _recent(f"feed_failed:{key}", FAIL_BACKOFF):
+        return False, f"{cfg['source']} unavailable (retrying later); showing cached items"
+    lock = _locks[key]
+    if not lock.acquire(blocking=False):        # another request is already downloading this feed
+        return True, "refreshing"
+    try:
+        return _download_feed(key, cfg)
+    finally:
+        lock.release()
+
+
+def _download_feed(key: str, cfg: dict) -> tuple[bool, str]:
     try:
         r = requests.get(cfg["url"], headers={"User-Agent": USER_AGENT}, timeout=20)
         r.raise_for_status()
         items = parse_rss(r.content)
-    except Exception as exc:  # network, HTTP or XML errors - keep cached items
-        log.warning("feed %s failed: %s", key, exc)
+    except Exception as exc:  # network, HTTP or XML errors (e.g. a truncated download) - keep cached items
+        log.warning("feed %s failed (next attempt in %d min): %s", key, FAIL_BACKOFF.seconds // 60, exc)
+        db.set_setting(f"feed_failed:{key}", db.utcnow().isoformat())
         return False, f"{cfg['source']} unavailable: {exc}"
     now = db.utcnow()
     names = _name_to_symbol() if key.startswith("nse") else {}
@@ -152,7 +175,7 @@ def refresh_feed(key: str, force: bool = False) -> tuple[bool, str]:
 
 def refresh_market_news(force: bool = False) -> tuple[bool, str]:
     last = db.get_setting("feed_refreshed:yahoo_market")
-    if not force and last and datetime.utcnow() - datetime.fromisoformat(last) < timedelta(minutes=30):
+    if not force and last and db.utcnow() - datetime.fromisoformat(last) < timedelta(minutes=30):
         return True, "cached"
     if config.OFFLINE:
         return False, "offline"

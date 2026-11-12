@@ -39,6 +39,7 @@ async def warmer() -> None:
                 await asyncio.to_thread(marketdata.QUOTES.get, syms)
                 routes_market.universe_snapshot.cache_clear()
                 await asyncio.to_thread(marketdata.index_overview)
+                await asyncio.to_thread(routes_explore.metrics_frame, True)  # screener / explore / industries
                 await asyncio.to_thread(feeds.refresh_all)
                 await asyncio.to_thread(securities.refresh_securities)
         except Exception as exc:  # keep the loop alive whatever happens
@@ -63,13 +64,28 @@ app.add_middleware(SessionMiddleware, secret_key=secret_key(), session_cookie="e
                    same_site="lax", https_only=os.environ.get("EQUITYPILOT_SECURE_COOKIES") == "1")
 
 
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    response = await call_next(request)
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-    return response
+SECURITY_HEADERS = [(b"x-content-type-options", b"nosniff"), (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"strict-origin-when-cross-origin")]
+
+
+class SecurityHeaders:
+    """Pure ASGI middleware (no BaseHTTPMiddleware: cancelled browser requests no longer log spurious errors)."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                present = {k.lower() for k, _ in message.get("headers", [])}
+                message["headers"] = list(message.get("headers", [])) + [h for h in SECURITY_HEADERS if h[0] not in present]
+            await send(message)
+        await self.app(scope, receive, send_with_headers)
+
+
+app.add_middleware(SecurityHeaders)
 
 
 @app.exception_handler(Exception)

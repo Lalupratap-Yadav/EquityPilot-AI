@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
@@ -79,12 +80,19 @@ def news(request: Request, section: str = "disclosures", symbol: str | None = No
 MAX_PDF = 50 * 1024 * 1024
 
 
+def visible_doc_ids(uid: int) -> set[int]:
+    """Documents this user may read: their own uploads plus shared (unowned) ones such as v1 uploads."""
+    owner = db.read_df(db.select(db.documents.c.id, db.documents.c.user_id))
+    if owner.empty:
+        return set()
+    return {int(i) for i in owner[(owner["user_id"] == uid) | owner["user_id"].isna()]["id"]}
+
+
 @router.get("/documents")
 def documents(request: Request, symbol: str | None = None):
     uid = current_user(request)
     df = U.list_documents(symbol)
-    owner = db.read_df(db.select(db.documents.c.id, db.documents.c.user_id))
-    mine = set(owner[(owner["user_id"] == uid) | owner["user_id"].isna()]["id"]) if not owner.empty else set()
+    mine = visible_doc_ids(uid)
     df = df[df["id"].isin(mine)] if not df.empty else df
     return clean(df.to_dict("records"))
 
@@ -127,7 +135,8 @@ def delete_doc(doc_id: int, request: Request):
 
 @router.get("/documents/{doc_id}/search")
 def doc_search(doc_id: int, q: str, request: Request):
-    current_user(request)
+    if doc_id not in visible_doc_ids(current_user(request)):
+        raise not_found("Document")
     return clean({"passages": rag.retrieve(q, [doc_id], k=8)})
 
 
@@ -145,7 +154,8 @@ def ask(body: Ask, request: Request):
     LIMITER.check(request, "assistant", 20, 60)
     settings = users.get_pref(uid, "ai_settings", {}) or {}
     engine = settings.get("provider", "offline")
-    passages = rag.retrieve(body.question, body.doc_ids, k=6) if body.doc_ids else []
+    doc_ids = [d for d in body.doc_ids if d in visible_doc_ids(uid)] if body.doc_ids else []
+    passages = rag.retrieve(body.question, doc_ids, k=6) if doc_ids else []
     ctx = build_context(body.symbol, body.question) if body.symbol and repo.get_company(body.symbol) else None
     if ctx and passages:
         for p in passages:
@@ -168,7 +178,7 @@ def ask(body: Ask, request: Request):
             hist = [{"role": h.get("role"), "content": str(h.get("content", ""))[:4000]} for h in body.history[-6:]
                     if h.get("role") in ("user", "assistant")]
             if engine == "anthropic":
-                key = P.find_api_key(request.session.get("anthropic_key"))
+                key = api_key_for(request)
                 if not key or not settings.get("consent"):
                     raise P.ProviderError("Claude API is not configured (key + billing acknowledgement in Settings).")
                 res = P.ask_anthropic(ctx_text, hist, body.question, settings.get("model", "claude-opus-5-5"), key)
@@ -193,6 +203,15 @@ def ask(body: Ask, request: Request):
     return clean({"answer": answer, "meta": meta, "sources": sources})
 
 
+def api_key_for(request: Request) -> str | None:
+    """The user's own key (this session only). A server-wide ANTHROPIC_API_KEY is used only when the owner opts in with
+    EQUITYPILOT_SHARED_AI_KEY=1 - otherwise any visitor of a public deployment could spend the owner's API credit."""
+    own = request.session.get("anthropic_key")
+    if own:
+        return own
+    return P.find_api_key() if os.environ.get("EQUITYPILOT_SHARED_AI_KEY") == "1" else None
+
+
 class AISettings(BaseModel):
     provider: str = Field(pattern="^(offline|anthropic|ollama)$")
     model: str | None = None
@@ -206,7 +225,7 @@ class AISettings(BaseModel):
 def get_ai_settings(request: Request):
     uid = current_user(request)
     s = users.get_pref(uid, "ai_settings", {}) or {}
-    return clean({**s, "provider": s.get("provider", "offline"), "key_configured": bool(P.find_api_key(request.session.get("anthropic_key"))),
+    return clean({**s, "provider": s.get("provider", "offline"), "key_configured": bool(api_key_for(request)),
                   "models": P.ANTHROPIC_MODELS, "pricing_note": P.PRICING_NOTE,
                   "estimates": {m: {"company": P.estimate_cost_usd(m, 6000, 900), "document": P.estimate_cost_usd(m, 30000, 1500)}
                                 for m in P.ANTHROPIC_MODELS}})

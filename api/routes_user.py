@@ -103,7 +103,7 @@ def watchlists(request: Request):
     wls = db.read_df(db.select(db.watchlists).where(db.watchlists.c.user_id == uid).order_by(db.watchlists.c.id))
     items = db.read_df(db.select(db.watchlist_items).where(db.watchlist_items.c.watchlist_id.in_(wls["id"].tolist() or [-1])))
     syms = sorted(set(items["symbol"])) if not items.empty else []
-    quotes = M.QUOTES.get(syms) if syms else {}
+    quotes = M.QUOTES.get(syms, stale_ok=len(syms) > 5) if syms else {}
     names = {s: (repo.get_company(s) or {}).get("name", s) for s in syms}
     out = []
     for _, w in wls.iterrows():
@@ -267,7 +267,7 @@ def recent(request: Request):
     v = db.read_df(db.select(db.recent_views).where(db.recent_views.c.user_id == uid).order_by(db.recent_views.c.ts.desc()).limit(12))
     s = db.read_df(db.select(db.recent_searches).where(db.recent_searches.c.user_id == uid).order_by(db.recent_searches.c.ts.desc()).limit(8))
     syms = v["symbol"].tolist() if not v.empty else []
-    q = M.QUOTES.get(syms) if syms else {}
+    q = M.QUOTES.get(syms, stale_ok=True) if syms else {}
     views = [{"symbol": s_, "name": (repo.get_company(s_) or {}).get("name", s_), **{k: q.get(s_, {}).get(k) for k in ("price", "change_pct", "status")}}
              for s_ in syms]
     return clean({"views": views, "searches": s["query"].tolist() if not s.empty else []})

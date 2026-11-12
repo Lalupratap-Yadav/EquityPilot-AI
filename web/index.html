@@ -4,7 +4,14 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>web</title>
+    <meta name="description" content="EquityPilot AI - Indian equity research, market intelligence and financial analytics. Educational; not investment advice." />
+    <meta name="theme-color" content="#0B1222" />
+    <title>EquityPilot AI - Research Smarter</title>
+    <script>
+      // apply saved theme before first paint (avoids a light flash in dark mode)
+      try { const t = localStorage.getItem('ep-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            if (t === 'dark') document.documentElement.classList.add('dark'); } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

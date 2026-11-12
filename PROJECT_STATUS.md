@@ -1,5 +1,48 @@
 # EquityPilot AI – Project Status
 
+## v2 PLATFORM UPGRADE – complete (12 Nov 2026)
+Architecture: FastAPI backend `api/` (reuses the `equitypilot/` core) + React/TS/Tailwind frontend `web/` (Vite), served together on port 8000. The Streamlit app (`app.py`) still works as the classic workbench.
+Audit: docs/AUDIT.md. Changelog: CHANGELOG.md.
+
+| Step | State |
+|---|---|
+| Schema v2 (users, watchlists, alerts, notifications, paper trading, securities, news_items, doc_chunks, corporate actions) | ✅ migrates the existing DB |
+| Securities master (AMFI Dec-2025 + NSE EQUITY_L, 5,552) + search | ✅ tested live |
+| Feeds (NSE announcements/results, RBI, SEBI, Yahoo market) with failure back-off | ✅ tested |
+| Market data provider (Yahoo delayed), intraday, 17 indices, corporate actions, WebSocket | ✅ |
+| Virtual Invest engine + page | ✅ tested |
+| Industries (15) + universe of 121 real companies | ✅ |
+| RAG (BM25 passages with page refs) + Documents page | ✅ tested (incl. owner-only access) |
+| API routers: market, company, explore, user, invest, research | ✅ API tests |
+| Frontend: all 20 routes (no placeholders) | ✅ `tsc -b` clean, production build OK |
+| Visual check (headless Edge): every route in light, key routes in dark, every route at 390 px | ✅ no console errors, no horizontal overflow, no NaN/undefined text |
+| Performance: universe metrics stale-while-revalidate + disk snapshot | ✅ cold-start Explore 0.36 s (was up to 162 s) |
+| Docs: README v2, DEPLOYMENT (Docker), DEMO_SCRIPT v2, CHANGELOG, screenshots | ✅ |
+| Dockerfile | ⚠️ written, **not build-tested** (Docker not installed on this machine) |
+| PostgreSQL path (`EQUITYPILOT_DATABASE_URL`) | ⚠️ implemented, **not tested** against a live server |
+| Frontend unit tests | ❌ none: the frontend is covered by the type-check, the build and the visual checks only |
+
+Tests: **148 passing** (`python -m pytest -q`), all offline against a temporary DB.
+
+Run: `python -m uvicorn api.main:app --port 8000` (after `cd web && npm run build`). Frontend dev: `cd web && npm run dev`.
+
+---|---|
+| Backend: schema v2 (users, watchlists, alerts, notifications, paper trading, securities, news_items, doc_chunks, corporate actions) | ✅ done, migrates existing DB |
+| Securities master (AMFI Dec-2025 + NSE EQUITY_L, 5,552) + search | ✅ |
+| Feeds (NSE announcements/results, RBI, SEBI, Yahoo market) | ✅ |
+| Market data provider (Yahoo delayed), intraday, indices (17), corporate actions, WebSocket | ✅ |
+| Virtual Invest engine | ✅ tested |
+| Industries content (15) + universe 121 real companies | ✅ |
+| RAG (BM25 passages with page refs) | ✅ tested |
+| API routers: market, company, explore, user, invest, research | ✅ 14 API tests; 144 total passing |
+| Frontend (web/) | ⏳ next: design system, shell, pages |
+| Docs, Dockerfile, demo script v2 | ⏳ |
+
+Run backend: `.venv/Scripts/python -m uvicorn api.main:app --port 8000` · frontend dev: `cd web && npm run dev` (proxy /api → 8000).
+
+---
+
+
 _Source of truth for what is built and tested. Updated at the end of every phase._
 
 **Last updated:** 12 Nov 2026 · **Status:** Phases 1–10 complete, plus post-v1 enhancements (quarterly results, bank metrics, Excel exports, CLI refresh). Remaining items need the owner's action – see TODO.md.

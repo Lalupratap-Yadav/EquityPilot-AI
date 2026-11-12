@@ -154,6 +154,9 @@ def test_document_upload_and_rag(client):
     assert bad.status_code == 400
     other = TestClient(app)
     assert other.delete(f"/api/documents/{doc_id}").status_code == 404   # another user cannot delete it
+    assert other.get(f"/api/documents/{doc_id}/search?q=revenue").status_code == 404   # ...or search it
+    leak = other.post("/api/assistant/ask", json={"question": "How did revenue grow?", "doc_ids": [doc_id]}).json()
+    assert not any(s["ID"].startswith("D") for s in leak["sources"]) and "exports" not in leak["answer"]
     assert client.delete(f"/api/documents/{doc_id}").status_code == 200
 
 
@@ -183,3 +186,53 @@ def test_security_headers_and_validation(client):
     assert client.post("/api/invest/orders", json={"symbol": "SAMPLE-BETA", "side": "HOLD", "qty": 1}).status_code == 422
     assert client.post("/api/alerts", json={"symbol": "SAMPLE-ALPHA", "direction": "above", "price": -5}).status_code == 422
     assert client.post("/api/companies/<script>/track").status_code in (400, 404)
+
+
+def test_shareholding_entry(client):
+    from equitypilot import db
+    db.upsert(db.companies, [{"symbol": "TESTCO.NS", "name": "Test Co Ltd", "is_sample": False}], ["symbol"])
+    url = "/api/companies/TESTCO.NS/shareholding"
+    rows = [{"category": "Promoter & Promoter Group", "pct": 50.1, "pledged_pct": 0},
+            {"category": "FII/FPI", "pct": 20}, {"category": "DII", "pct": 19.9}, {"category": "Public & Others", "pct": 10}]
+    assert client.post("/api/companies/SAMPLE-ALPHA/shareholding", json={"period": "2025-09-30", "rows": rows}).status_code == 400
+    assert client.post(url, json={"period": "2025-09-30", "rows": rows[:2]}).status_code == 400      # does not total 100%
+    assert client.post(url, json={"period": "30-09-2025", "rows": rows}).status_code == 422           # bad date
+    r = client.post(url, json={"period": "2025-09-30", "rows": rows, "source_url": "javascript:alert(1)"})
+    assert r.status_code == 200 and r.json()["saved"] == 4
+    sh = client.get("/api/companies/TESTCO.NS/ownership").json()["shareholding"]
+    q = [x for x in sh if x["period"] == "2025-09-30"]
+    assert len(q) == 4 and all(x["data_type"] == "user_entered" and not x["source_url"] for x in q)
+
+
+def test_server_ai_key_needs_opt_in(client, monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-not-real")
+    monkeypatch.delenv("EQUITYPILOT_SHARED_AI_KEY", raising=False)
+    assert client.get("/api/assistant/settings").json()["key_configured"] is False   # visitors can't spend the owner's key
+    monkeypatch.setenv("EQUITYPILOT_SHARED_AI_KEY", "1")
+    assert client.get("/api/assistant/settings").json()["key_configured"] is True
+
+
+def test_paper_account_creation_is_idempotent(client):
+    uid = client.get("/api/me").json()["user"]["id"]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as ex:
+        accounts = list(ex.map(lambda _: P.account(uid), range(4)))
+    assert {a["cash"] for a in accounts} == {P.INITIAL_CASH}
+    assert client.get("/api/invest/summary").status_code == 200
+
+
+def test_failed_feed_backs_off(monkeypatch):
+    from equitypilot import config
+    from equitypilot.data import feeds as N
+    calls = []
+
+    def boom(*a, **k):
+        calls.append(1)
+        raise OSError("truncated download")
+    monkeypatch.setattr(config, "OFFLINE", False)
+    monkeypatch.setattr(N.requests, "get", boom)
+    db.set_setting("feed_refreshed:rbi_press", "2000-01-01T00:00:00")
+    db.set_setting("feed_failed:rbi_press", "2000-01-01T00:00:00")
+    assert N.refresh_feed("rbi_press")[0] is False
+    assert N.refresh_feed("rbi_press")[0] is False      # second call within the back-off window: no new request
+    assert len(calls) == 1

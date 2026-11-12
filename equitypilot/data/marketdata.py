@@ -103,7 +103,7 @@ class YahooDelayedProvider(MarketDataProvider):
             prev_rows = d[[pd.Timestamp(x).date() < ts.date() for x in d.index]]
             prev = float(prev_rows["Close"].iloc[-1]) if len(prev_rows) else None
             ts_utc = (ts.tz_convert("UTC").tz_localize(None) if ts.tzinfo else ts).to_pydatetime()
-            fresh = datetime.utcnow() - ts_utc < timedelta(minutes=40)
+            fresh = db.utcnow() - ts_utc < timedelta(minutes=40)
             out[s] = Quote(s, price, prev, price - prev if prev else None, price / prev - 1 if prev else None,
                            float(d["Volume"].iloc[-1]) if "Volume" in d else None, ts_utc.isoformat(),
                            "delayed" if (status_open and fresh) else "close", self.name)
@@ -151,10 +151,12 @@ class QuoteCache:
     def __init__(self, ttl: float = 60.0):
         self.ttl, self._data, self._lock = ttl, {}, threading.Lock()
 
-    def get(self, symbols: list[str]) -> dict[str, dict]:
+    def get(self, symbols: list[str], stale_ok: bool = False) -> dict[str, dict]:
+        """stale_ok=True never blocks on the provider: returns cached (or DB) quotes and leaves refreshing
+        to the background warmer. Use it for dashboards; use stale_ok=False when a fresh price matters (orders)."""
         now = time.time()
         with self._lock:
-            stale = [s for s in symbols if s not in self._data or now - self._data[s][0] > self.ttl]
+            stale = [] if stale_ok else [s for s in symbols if s not in self._data or now - self._data[s][0] > self.ttl]
         fetched = provider().quotes(stale) if stale else {}
         with self._lock:
             for s, q in fetched.items():

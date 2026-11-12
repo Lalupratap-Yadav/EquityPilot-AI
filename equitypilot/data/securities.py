@@ -86,7 +86,7 @@ def parse_nse_equity(content: bytes) -> pd.DataFrame:
 def refresh_securities(force: bool = False) -> tuple[bool, str]:
     """Download AMFI + NSE lists and merge into the securities table (weekly cache)."""
     last = db.get_setting("securities_refreshed")
-    if not force and last and (datetime.utcnow() - datetime.fromisoformat(last)).days < 7:
+    if not force and last and (db.utcnow() - datetime.fromisoformat(last)).days < 7:
         return True, "Securities list is up to date."
     if config.OFFLINE:
         return False, "Offline mode - securities list not refreshed."
@@ -124,7 +124,7 @@ def refresh_securities(force: bool = False) -> tuple[bool, str]:
         r["listing_date"] = None if ld is None or pd.isna(ld) else ld
         clean.append(r)
     n = db.upsert(db.securities, clean, ["isin"])
-    db.set_setting("securities_refreshed", datetime.utcnow().isoformat())
+    db.set_setting("securities_refreshed", db.utcnow().isoformat())
     db.set_setting("securities_as_of", as_of)
     return True, f"{n} securities stored (AMFI list: {as_of or 'unavailable'}; NSE list: {'yes' if nse is not None else 'unavailable'})."
 

@@ -410,7 +410,8 @@ def read_df(stmt) -> pd.DataFrame:
         return pd.DataFrame(res.fetchall(), columns=list(res.keys()))
 
 
-def upsert(table: Table, rows: Iterable[dict], conflict_cols: list[str]) -> int:
+def upsert(table: Table, rows: Iterable[dict], conflict_cols: list[str], update: bool = True) -> int:
+    """Insert rows; on conflict update the other columns (or keep the existing row when update=False)."""
     rows = [r for r in rows]
     if not rows:
         return 0
@@ -421,7 +422,7 @@ def upsert(table: Table, rows: Iterable[dict], conflict_cols: list[str]) -> int:
         dialect_insert = sqlite_insert
     stmt = dialect_insert(table)
     update_cols = {c.name: stmt.excluded[c.name] for c in table.columns
-                   if c.name not in conflict_cols and c.name != "id"}
+                   if update and c.name not in conflict_cols and c.name != "id"}
     stmt = (stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols) if update_cols
             else stmt.on_conflict_do_nothing(index_elements=conflict_cols))
     with eng.begin() as conn:
