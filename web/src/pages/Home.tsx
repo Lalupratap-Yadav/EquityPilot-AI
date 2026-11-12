@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowRight, ExternalLink, Landmark, PiggyBank, Scale, Star } from 'lucide-react'
+import { ArrowRight, ExternalLink, Landmark, PiggyBank, Scale, Sparkles, Star } from 'lucide-react'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Sparkline } from '../components/charts'
 import { CardRow, CompanyAvatar } from '../components/common'
+import { LivePrice, MarketClock, useIndexOverview } from '../components/live'
 import { Card, ChangePill, cx, DataBadge, EmptyState, Segmented, Skeleton, SourceNote } from '../components/ui'
-import { api, type CompanyCardData, type IndexRow, type MarketStatus, type Mover } from '../lib/api'
+import { api, type CompanyCardData, type Mover } from '../lib/api'
 import { baseSymbol, inr, isNum, num, pct, timeAgo } from '../lib/format'
 import { useMe } from '../lib/hooks'
 
-interface Overview { status: MarketStatus; indices: IndexRow[]; source: string }
 interface Movers { gainers: Mover[]; losers: Mover[]; active: Mover[]; breadth: { advances: number; declines: number; unchanged: number; median_change: number } | null; universe: number; latest_time: string; note: string }
 interface Sectors { industries: { industry: string; name: string; avg_change: number; companies: number; advances: number; declines: number }[]; note: string }
 interface NewsItem { title: string; url: string | null; published: string | null; source: string; category: string; symbol: string | null; summary?: string | null }
@@ -19,12 +19,35 @@ function greeting() {
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
 }
 
+const ASK_EXAMPLES = ['How is the market today?', 'Compare TCS and Infosys', 'Top 10 banks by ROE', 'Is Reliance\'s debt high?']
+
+/** Ask-anything box: sends the question to the AI research assistant. */
+function AskBox() {
+  const nav = useNavigate()
+  const [q, setQ] = useState('')
+  const go = (text: string) => { if (text.trim()) nav(`/assistant?q=${encodeURIComponent(text.trim())}`) }
+  return (
+    <div className="mt-5 max-w-2xl">
+      <form onSubmit={(e) => { e.preventDefault(); go(q) }} className="flex items-center gap-2 rounded-2xl bg-white/10 p-1.5 ring-1 ring-white/15 backdrop-blur focus-within:ring-white/40">
+        <Sparkles className="ml-2 h-4 w-4 shrink-0 text-saffron-400" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={1000} aria-label="Ask the AI research assistant"
+          placeholder="Ask anything - a company, a comparison, the market…" className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-white placeholder:text-slate-300 focus:outline-none" />
+        <button className="btn shrink-0 bg-white text-ink-900 hover:bg-brand-50" disabled={!q.trim()}>Ask AI</button>
+      </form>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {ASK_EXAMPLES.map((x) => <button key={x} onClick={() => go(x)} className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-200 transition-colors hover:bg-white/20">{x}</button>)}
+      </div>
+    </div>
+  )
+}
+
 export default function Home() {
   const me = useMe()
-  const ov = useQuery({ queryKey: ['market-overview'], queryFn: () => api.get<Overview>('/market/overview'), refetchInterval: 120_000 })
-  const mv = useQuery({ queryKey: ['movers'], queryFn: () => api.get<Movers>('/market/movers?n=6'), refetchInterval: 120_000 })
+  const ov = useIndexOverview()
+  const liveSession = ov.data?.status.phase === 'open'
+  const mv = useQuery({ queryKey: ['movers'], queryFn: () => api.get<Movers>('/market/movers?n=6'), refetchInterval: liveSession ? 30_000 : 120_000 })
   const sec = useQuery({ queryKey: ['sectors'], queryFn: () => api.get<Sectors>('/market/sectors'), refetchInterval: 300_000 })
-  const wl = useQuery({ queryKey: ['watchlists'], queryFn: () => api.get<{ id: number; name: string; items: (Mover & { note: string | null })[] }[]>('/watchlists') })
+  const wl = useQuery({ queryKey: ['watchlists'], queryFn: () => api.get<{ id: number; name: string; items: (Mover & { note: string | null })[] }[]>('/watchlists'), refetchInterval: liveSession ? 30_000 : false })
   const recent = useQuery({ queryKey: ['recent'], queryFn: () => api.get<{ views: CompanyCardData[] }>('/recent') })
   const ann = useQuery({ queryKey: ['news', 'disclosures-home'], queryFn: () => api.get<{ items: NewsItem[] }>('/news?section=disclosures&tracked_only=true&limit=8') })
   const reg = useQuery({ queryKey: ['news', 'reg-home'], queryFn: async () => {
@@ -45,7 +68,10 @@ export default function Home() {
       {/* ---------------------------------------------- System 1 summary */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 p-5 text-white sm:p-7">
         <div className="relative z-10 max-w-3xl">
-          <p className="text-sm text-brand-200">{greeting()}{me.data?.user && !me.data.user.is_guest ? `, ${me.data.user.display_name}` : ''} · {ov.data?.status.now_ist ?? ''}</p>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-brand-200">
+            <span>{greeting()}{me.data?.user && !me.data.user.is_guest ? `, ${me.data.user.display_name}` : ''}</span>
+            <span className="rounded-full bg-white/90 dark:bg-white/90"><MarketClock /></span>
+          </div>
           <h1 className="mt-1 text-2xl font-semibold !text-white sm:text-3xl">What's happening in Indian markets</h1>
           {nifty && b ? (
             <p className="mt-3 text-[15px] leading-relaxed text-slate-200">
@@ -54,8 +80,9 @@ export default function Home() {
               {best && worst ? <>; <b>{best.name}</b> led ({pct(best.avg_change, 2, true)}) while <b>{worst.name}</b> lagged ({pct(worst.avg_change, 2, true)})</> : null}.
             </p>
           ) : <div className="mt-3 space-y-2"><Skeleton className="h-4 w-full bg-white/10" /><Skeleton className="h-4 w-2/3 bg-white/10" /></div>}
+          <AskBox />
           <div className="mt-4 flex flex-wrap gap-2">
-            <Link to="/explore" className="btn bg-white text-ink-900 hover:bg-brand-50">Explore companies <ArrowRight className="h-4 w-4" /></Link>
+            <Link to="/explore" className="btn bg-white/10 text-white hover:bg-white/20">Explore companies <ArrowRight className="h-4 w-4" /></Link>
             <Link to="/invest" className="btn bg-white/10 text-white hover:bg-white/20"><PiggyBank className="h-4 w-4" />Practise with ₹10 lakh virtual money</Link>
           </div>
         </div>
@@ -68,8 +95,8 @@ export default function Home() {
           {ov.isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)}
           {broad.map((i) => (
             <Link key={i.symbol} to={`/markets?symbol=${encodeURIComponent(i.symbol)}`} className="card p-3.5 transition-colors hover:border-brand-300">
-              <div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs font-semibold muted" title={i.name}>{i.name}</span><DataBadge className="shrink-0" type={ov.data?.status.open ? 'delayed' : 'close'} /></div>
-              <div className="num mt-1 text-lg font-semibold">{num(i.last, 2)}</div>
+              <div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs font-semibold muted" title={i.name}>{i.name}</span><DataBadge className="shrink-0" type={ov.data?.status.open ? (ov.data.status.realtime ? 'live' : 'delayed') : 'close'} /></div>
+              <div className="mt-1 text-lg font-semibold"><LivePrice value={i.last} /></div>
               <div className="flex items-end justify-between">
                 <ChangePill value={i.symbol === '^INDIAVIX' ? null : i.change_pct} />{i.symbol === '^INDIAVIX' && <span className="text-xs muted">{pct(i.change_pct, 2, true)}</span>}
                 <Sparkline data={i.spark} width={80} height={30} positive={i.symbol === '^INDIAVIX' ? i.change_pct <= 0 : undefined} />
@@ -80,8 +107,8 @@ export default function Home() {
         {ov.data && <SourceNote sources={[ov.data.source]} extra={ov.data.status.note} />}
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
+      <div className="grid gap-6 xl:grid-cols-3 xl:grid-rows-[auto_1fr]">
+        <div className="space-y-6 xl:col-span-2 xl:row-span-2">
           {/* ------------------------------------------ breadth + movers */}
           <Card title="Market movers" subtitle={mv.data?.note}
             action={<Segmented size="xs" value={moverTab} onChange={setMoverTab} options={[{ id: 'gainers', label: 'Gainers' }, { id: 'losers', label: 'Losers' }, { id: 'active', label: 'Most active' }]} />}>
@@ -128,8 +155,8 @@ export default function Home() {
           </Card>
         </div>
 
-        {/* ------------------------------------------ right rail */}
-        <div className="space-y-6">
+        {/* ------------------------------------------ right rail: personal first (shown right after the indices on phones) */}
+        <div className="order-first space-y-6 xl:order-none">
           <Card title={<span className="inline-flex items-center gap-1.5"><Star className="h-4 w-4 text-saffron-500" />{wl.data?.[0]?.name ?? 'Watchlist'}</span>}
             action={<Link to="/watchlists" className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-300">Manage</Link>}>
             {(wl.data?.[0]?.items ?? []).length === 0 ? (
@@ -138,7 +165,7 @@ export default function Home() {
               <ul className="space-y-2">
                 {wl.data![0].items.slice(0, 7).map((i) => (
                   <li key={i.symbol}><Link to={`/company/${encodeURIComponent(i.symbol)}`} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="truncate font-medium">{i.name}</span><span className="flex items-center gap-2"><span className="num">{inr(i.price)}</span><ChangePill value={i.change_pct} /></span>
+                    <span className="truncate font-medium">{i.name}</span><span className="flex shrink-0 items-center gap-2"><LivePrice value={i.price} prefix="₹" /><ChangePill value={i.change_pct} /></span>
                   </Link></li>
                 ))}
               </ul>
@@ -153,6 +180,9 @@ export default function Home() {
             </>) : <Skeleton className="mt-2 h-8 w-40" />}
             <p className="mt-2 text-xs muted">Paper trading with ₹10 lakh virtual money. No real orders.</p>
           </Link>
+        </div>
+
+        <div className="space-y-6">
 
           <Card title="Recently viewed">
             {(recent.data?.views ?? []).length === 0 ? <p className="text-sm muted">Companies you open will appear here.</p> : (

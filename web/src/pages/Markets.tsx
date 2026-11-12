@@ -3,10 +3,11 @@ import { Radio, Wifi, WifiOff } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Sparkline } from '../components/charts'
+import { LivePrice, useIndexOverview } from '../components/live'
 import { StockChart } from '../components/StockChart'
 import { Card, ChangePill, cx, DataBadge, EmptyState, Notice, PageHeader, Segmented, Skeleton } from '../components/ui'
-import { api, type IndexRow, type MarketStatus } from '../lib/api'
-import { baseSymbol, inr, num, timeAgo } from '../lib/format'
+import { api, type IndexRow } from '../lib/api'
+import { baseSymbol, inr, timeAgo } from '../lib/format'
 import { useQuoteStream } from '../lib/hooks'
 
 
@@ -17,14 +18,19 @@ export default function Markets() {
   const [params, setParams] = useSearchParams()
   const symbol = params.get('symbol') || '^NSEI'
   const [board, setBoard] = useState<'watchlist' | 'universe'>('universe')
-  const ov = useQuery({ queryKey: ['market-overview'], queryFn: () => api.get<{ status: MarketStatus; indices: IndexRow[] }>('/market/overview'), refetchInterval: 120_000 })
+  const ov = useIndexOverview()
   const wl = useQuery({ queryKey: ['watchlists'], queryFn: () => api.get<{ items: { symbol: string; name: string }[] }[]>('/watchlists') })
   const mv = useQuery({ queryKey: ['movers-20'], queryFn: () => api.get<{ active: { symbol: string; name: string }[] }>('/market/movers?n=20') })
   const boardSymbols = useMemo(() => (board === 'watchlist' ? (wl.data ?? []).flatMap((w) => w.items.map((i) => i.symbol)) : (mv.data?.active ?? []).map((m) => m.symbol)).slice(0, 25), [board, wl.data, mv.data])
   const names = useMemo(() => Object.fromEntries([...(wl.data ?? []).flatMap((w) => w.items), ...(mv.data?.active ?? [])].map((x) => [x.symbol, x.name])), [wl.data, mv.data])
-  const stream = useQuoteStream(boardSymbols)
-  const idx = ov.data?.indices ?? []
+  const stream = useQuoteStream(useMemo(() => [...boardSymbols, symbol], [boardSymbols, symbol]))
+  const idx: IndexRow[] = ov.data?.indices ?? []
   const current = idx.find((i) => i.symbol === symbol)
+  // newest of the tile value and the streamed quote, so the chart header moves with the stream
+  const sq = stream.quotes[symbol]
+  const live = sq && sq.price != null && sq.time && (!current?.time || sq.time > current.time)
+    ? { price: sq.price, prev_close: sq.prev_close ?? null, time: sq.time }
+    : current ? { price: current.last, prev_close: current.prev ?? null, time: current.time ?? null } : null
 
   return (
     <div className="space-y-5">
@@ -37,7 +43,7 @@ export default function Markets() {
           <button key={i.symbol} onClick={() => setParams({ symbol: i.symbol })}
             className={cx('card w-[170px] shrink-0 p-3 text-left transition-colors', symbol === i.symbol ? 'border-brand-500 ring-2 ring-brand-500/20' : 'hover:border-brand-300')}>
             <div className="truncate text-[11px] font-semibold muted">{i.name}</div>
-            <div className="num text-sm font-semibold">{num(i.last, 2)}</div>
+            <div className="text-sm font-semibold"><LivePrice value={i.last} /></div>
             <div className="flex items-center justify-between"><ChangePill value={i.change_pct} /><Sparkline data={i.spark} width={56} height={22} /></div>
           </button>
         ))}
@@ -46,7 +52,7 @@ export default function Markets() {
       <div className="grid gap-5 xl:grid-cols-3">
         <Card className="xl:col-span-2" title={current?.name ?? INDEX_NAMES[symbol] ?? baseSymbol(symbol)}>
           <StockChart symbol={symbol} isIndex={symbol.startsWith('^')} defaultRange="1D"
-            live={current ? { price: current.last, prev_close: current.prev ?? null, time: current.time ?? null } : null} />
+            live={live} />
         </Card>
 
         <Card title={<span className="inline-flex items-center gap-1.5"><Radio className="h-4 w-4 text-brand-600" />Quote board</span>}

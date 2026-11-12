@@ -69,7 +69,10 @@ export interface IndexRow {
   status: Status
 }
 
-export interface MarketStatus { open: boolean; now_ist: string; note: string }
+export interface MarketStatus {
+  open: boolean; phase?: 'open' | 'pre-open' | 'closed'; holiday?: boolean; now_ist: string; note: string
+  closes_at?: string | null; next_open?: string | null; realtime?: boolean; provider?: string
+}
 
 export interface Mover {
   symbol: string

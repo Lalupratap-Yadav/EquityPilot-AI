@@ -49,6 +49,11 @@ def _filter_tiers(items: list[dict], include_unrated: bool) -> tuple[list[dict],
 def news(request: Request, section: str = "disclosures", symbol: str | None = None, industry: str | None = None,
          q: str | None = None, tracked_only: bool = False, limit: int = 60, include_unrated: bool = False):
     current_user(request)
+    return news_data(section, symbol, industry, q, tracked_only, limit, include_unrated)
+
+
+def news_data(section: str = "disclosures", symbol: str | None = None, industry: str | None = None, q: str | None = None,
+              tracked_only: bool = False, limit: int = 60, include_unrated: bool = False) -> dict:
     limit = max(1, min(limit, 200))
     N.refresh_all()                          # TTL-cached per feed
     if section == "company":
@@ -214,6 +219,35 @@ def ask(body: Ask, request: Request):
                 for i, p in enumerate(passages)]
     db.log_activity("Asked assistant", f"user {uid}: {body.question[:60]}")
     return clean({"answer": answer, "meta": meta, "sources": sources})
+
+
+@router.post("/assistant/stream")
+def ask_stream(body: Ask, request: Request):
+    """Streaming research answer (server-sent events): tool steps as they run, then the answer text, then sources/meta.
+    Claude uses the full tool-use agent; the free offline analyst and Ollama use the same grounded tools."""
+    from fastapi.responses import StreamingResponse
+
+    from .assistant import stream_answer
+    uid = current_user(request)
+    LIMITER.check(request, "assistant", 20, 60)
+    settings = users.get_pref(uid, "ai_settings", {}) or {}
+    if settings.get("provider", "offline") != "offline":
+        LIMITER.check(request, "llm", 10, 60)
+    visible = visible_doc_ids(uid)
+    doc_ids = [d for d in body.doc_ids if d in visible] if body.doc_ids else []
+    names = []
+    if doc_ids:
+        docs = U.list_documents()
+        names = [str(r["filename"]) for _, r in docs.iterrows() if int(r["id"]) in doc_ids] if not docs.empty else []
+    hist = [{"role": h.get("role"), "content": str(h.get("content", ""))[:4000]} for h in body.history[-6:]
+            if h.get("role") in ("user", "assistant") and str(h.get("content", "")).strip()]
+    while hist and hist[0]["role"] != "user":         # the API expects the conversation to start with a user turn
+        hist.pop(0)
+    symbol = body.symbol if body.symbol and (repo.get_company(body.symbol) or not body.symbol.startswith("SAMPLE-")) else None
+    db.log_activity("Asked assistant", f"user {uid}: {body.question[:60]}")
+    gen = stream_answer(body.question, hist, symbol, doc_ids, uid, settings, api_key_for(request), names)
+    return StreamingResponse(gen, media_type="text/event-stream",
+                             headers={"cache-control": "no-cache", "x-accel-buffering": "no"})
 
 
 def api_key_for(request: Request) -> str | None:

@@ -1,5 +1,17 @@
 # EquityPilot AI – Project Status
 
+## v2.4 LIVE LAYER, RESEARCH AGENT, PREMIUM UI – complete (13 Nov 2026)
+| Item | State |
+|---|---|
+| Market clock: pre-open / open / closed, countdown, holiday detected from data | ✅ tests |
+| In-session refresh of indices + on-screen symbols every 20 s; WebSocket pushes only changed quotes | ✅ tests (snapshot then diff) |
+| Optional Zerodha Kite Connect real-time quotes, with delayed fallback | ✅ tested against mocked API only; **not tested with a live Kite account** |
+| Claude tool-use research agent (9 tools, streaming, prompt caching, grounding check) | ✅ tested with a fake client; **not run against the paid API in this session** |
+| Free offline analyst: market / compare / screen / news / company / concept routing; companies named in the question | ✅ tests + manual run of 10 questions on live data |
+| Live index ticker, price flash, mobile tab bar, Home "Ask AI", streaming assistant UI | ✅ screenshots 1440 px light and 390 px dark: no overflow, NaN or console errors |
+
+Tests: **205 passing**.
+
 ## v2.3 PRICE CONSISTENCY – complete (13 Nov 2026)
 | Item | State |
 |---|---|

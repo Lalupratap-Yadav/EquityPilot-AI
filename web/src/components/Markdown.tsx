@@ -3,8 +3,12 @@ import { Fragment, type ReactNode } from 'react'
 /** Small, safe Markdown renderer (no raw HTML): headings, paragraphs, bullet & numbered lists,
  *  pipe tables, **bold**, *italic* and _italic_. Used for learning content and assistant answers. */
 function inline(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|_[^_]+_)/g).map((p, i) => {
-    if (p.startsWith('**') && p.endsWith('**')) return <strong key={i}>{p.slice(2, -2)}</strong>
+  return text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|_[^_\s][^_]*_|\[[STD]\d+(?:\s*,\s*[STD]\d+)*\])/g).map((p, i) => {
+    if (/^\[[STD]\d+(?:\s*,\s*[STD]\d+)*\]$/.test(p)) {
+      return <sup key={i} className="ml-0.5 inline-flex gap-0.5 align-super">{p.slice(1, -1).split(/\s*,\s*/).map((id) => (
+        <span key={id} title={`Source ${id} - listed under "Sources used"`} className="rounded bg-brand-50 px-1 text-[10px] font-semibold not-italic text-brand-700 dark:bg-brand-500/15 dark:text-brand-200">{id}</span>))}</sup>
+    }
+    if (p.startsWith('**') && p.endsWith('**')) return <strong key={i}>{inline(p.slice(2, -2))}</strong>
     if ((p.startsWith('*') && p.endsWith('*') && p.length > 2) || (p.startsWith('_') && p.endsWith('_') && p.length > 2)) return <em key={i}>{p.slice(1, -1)}</em>
     return <Fragment key={i}>{p}</Fragment>
   })
@@ -18,8 +22,9 @@ export function Markdown({ text, className }: { text: string; className?: string
     const line = lines[i]
     if (!line.trim()) { i++; continue }
     if (/^#{1,4}\s/.test(line)) {
-      out.push(<h4 key={i} className="mt-2 font-semibold">{inline(line.replace(/^#+\s/, ''))}</h4>); i++; continue
+      out.push(<h4 key={i} className="mt-3 text-[15px] font-semibold">{inline(line.replace(/^#+\s/, ''))}</h4>); i++; continue
     }
+    if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { out.push(<hr key={i} className="border-slate-200 dark:border-ink-700" />); i++; continue }
     if (line.trim().startsWith('|')) {
       const rows: string[][] = []
       while (i < lines.length && lines[i].trim().startsWith('|')) {

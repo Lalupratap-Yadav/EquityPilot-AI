@@ -31,7 +31,9 @@ FRESHNESS_HOURS = {
 # Every number shown in the app carries one of these data-type labels.
 DATA_TYPES = {
     "sample": ("SAMPLE", "Fictional demonstration data - not a real company"),
+    "live": ("LIVE", "Real-time price from a licensed broker feed"),
     "delayed": ("DELAYED", "Third-party market data; may be delayed by 15+ minutes"),
+    "official": ("OFFICIAL", "Primary source: exchange, regulator or government publication"),
     "historical": ("HISTORICAL", "Historical data as reported by the stated source"),
     "third_party": ("THIRD-PARTY", "Secondary data provider (e.g. Yahoo Finance) - verify with official filings"),
     "official_upload": ("OFFICIAL (UPLOADED)", "Entered from an official filing uploaded by the user"),

@@ -5,10 +5,11 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { api, type MarketStatus } from '../lib/api'
+import { api } from '../lib/api'
 import { timeAgo } from '../lib/format'
 import { useHotkey, useInvalidate, useMe, useTheme } from '../lib/hooks'
 import { SearchPalette } from './common'
+import { LiveTicker, MarketClock, MobileTabBar } from './live'
 import { cx } from './ui'
 
 const NAV: { section: string; items: { to: string; label: string; icon: ReactNode }[] }[] = [
@@ -68,18 +69,6 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       ))}
       <p className="mt-auto px-3 text-[10px] leading-relaxed text-slate-400">Educational research platform. Not investment advice. Prices are delayed unless marked LIVE.</p>
     </nav>
-  )
-}
-
-function MarketPill() {
-  const q = useQuery({ queryKey: ['market-status'], queryFn: () => api.get<MarketStatus>('/market/status'), refetchInterval: 60_000 })
-  if (!q.data) return null
-  return (
-    <span title={q.data.note} className={cx('hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium sm:inline-flex',
-      q.data.open ? 'bg-up/10 text-up' : 'bg-slate-500/10 text-slate-500 dark:text-slate-400')}>
-      <span className={cx('h-1.5 w-1.5 rounded-full', q.data.open ? 'animate-pulse bg-up' : 'bg-slate-400')} />
-      NSE {q.data.open ? 'open' : 'closed'}
-    </span>
   )
 }
 
@@ -143,7 +132,7 @@ export default function Layout() {
               <kbd className="hidden rounded-md border border-slate-200 px-1.5 text-[10px] font-semibold sm:inline dark:border-ink-600">Ctrl K</kbd>
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              <MarketPill />
+              <span className="hidden sm:inline-flex md:hidden"><MarketClock compact /></span><span className="hidden md:inline-flex"><MarketClock /></span>
               <button className="btn-ghost p-2" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
                 {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
               </button>
@@ -156,9 +145,11 @@ export default function Layout() {
               </Link>
             </div>
           </div>
+          <LiveTicker />
         </header>
-        <main key={loc.pathname} className="page-enter mx-auto max-w-[1400px] px-4 py-6 sm:px-6"><Outlet /></main>
+        <main key={loc.pathname} className="page-enter mx-auto max-w-[1400px] px-4 pb-24 pt-6 sm:px-6 lg:pb-8"><Outlet /></main>
       </div>
+      <MobileTabBar />
       <SearchPalette open={palette} onClose={() => setPalette(false)} />
     </div>
   )

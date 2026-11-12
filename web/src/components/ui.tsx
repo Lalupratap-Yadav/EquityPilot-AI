@@ -47,6 +47,7 @@ const STATUS: Record<string, [string, string, string]> = {
   sample: ['SAMPLE', 'bg-saffron-500/15 text-amber-700 dark:text-saffron-400', 'Fictional demonstration data'],
   third_party: ['THIRD-PARTY', 'bg-slate-500/10 text-slate-600 dark:text-slate-300', 'Secondary data provider - verify with filings'],
   official_upload: ['OFFICIAL (UPLOADED)', 'bg-up/10 text-up', 'Entered from an official filing'],
+  official: ['OFFICIAL', 'bg-up/10 text-up', 'Primary source: exchange, regulator or government publication'],
   user_entered: ['USER-ENTERED', 'bg-violet-500/10 text-violet-700 dark:text-violet-300', 'Entered by a user'],
   calculated: ['CALCULATED', 'bg-slate-500/10 text-slate-600 dark:text-slate-300', 'Computed by EquityPilot'],
   assumption: ['ASSUMPTION', 'bg-orange-500/10 text-orange-700 dark:text-orange-300', 'Editable assumption, not a reported figure'],

@@ -48,7 +48,8 @@ export function useQuoteStream(symbols: string[]): StreamState {
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data)
-          if (msg.type === 'quotes') setState({ quotes: msg.quotes, market: msg.market, connected: true, updatedAt: Date.now() })
+          // the server sends a full snapshot first, then only the quotes that changed
+          if (msg.type === 'quotes') setState((s) => ({ quotes: { ...s.quotes, ...msg.quotes }, market: msg.market, connected: true, updatedAt: Date.now() }))
         } catch { /* ignore malformed frame */ }
       }
       ws.onclose = () => {

@@ -98,7 +98,9 @@ docker run -p 8000:8000 -v equitypilot-data:/app/data equitypilot
 | `EQUITYPILOT_SECURE_COOKIES=1` | Mark cookies `Secure` when served over HTTPS |
 | `EQUITYPILOT_DATA_DIR`, `EQUITYPILOT_DB` | Location of data and the SQLite database |
 | `EQUITYPILOT_DATABASE_URL` | Use PostgreSQL instead of SQLite. The code path exists but hasn't been tested against a live server |
-| `EQUITYPILOT_NO_WARMER=1` | Disable the background refresh task |
+| `EQUITYPILOT_NO_WARMER=1` | Disable the background refresh tasks |
+| `EQUITYPILOT_HOT_INTERVAL` | Seconds between in-session refreshes of indices and on-screen symbols (default 20) |
+| `EQUITYPILOT_MARKET_PROVIDER=kite` + `KITE_API_KEY` + `KITE_ACCESS_TOKEN` | Paid and optional. Real-time quotes from your own Zerodha Kite Connect app. See [docs/MARKET_DATA.md](docs/MARKET_DATA.md) |
 | `ANTHROPIC_API_KEY` + `EQUITYPILOT_SHARED_AI_KEY=1` | Paid and optional. Lets **all** users of the server use your Claude key. Without the opt-in flag, each user enters their own key in Settings |
 
 ### Tests
@@ -132,11 +134,11 @@ python -m equitypilot refresh [--quotes-only] [--news] [--symbols TCS INFY]
 
 | Engine | Cost | Notes |
 |---|---|---|
-| **Offline analyst** (default) | Free | Deterministic. Quotes facts and calculations from cited sources and extracts relevant passages from your PDFs |
-| **Claude API** (optional) | Paid per use | Uses your own Anthropic API key. Settings shows the estimated cost per question before you enable it, and you must tick a consent box. The key stays in your session cookie and is never written to the database |
-| **Ollama** (optional) | Free | Runs a local open-source model |
+| **Offline analyst** (default) | Free | Rule-based router over the research tools. It answers market questions ("How is the market today?"), comparisons ("Compare TCS and Infosys"), screens ("Top 10 IT companies by ROE", "debt-free companies"), news, single-company questions and concepts. Companies can be named in the question. It also quotes relevant passages from your PDFs |
+| **Claude API** (optional) | Paid per use | A tool-using research agent. Claude chooses which tools to call: find a company, a company's research pack, price performance, compare, screen, market overview, news, your documents and the metric guide. It then writes a cited answer that streams to the browser. Uses your own Anthropic API key. Settings shows the estimated cost, and you must tick a consent box. The key stays in your session cookie |
+| **Ollama** (optional) | Free | A local open-source model, given the data the offline router gathered |
 
-Every engine gets the same numbered, source-tagged context. LLM answers go through a grounding check that reports any figures it can't trace to a source. The assistant declines buy, sell or hold requests.
+Every engine reads the same source-tagged tool results ([T1], [S1] ...). LLM answers go through a grounding check that flags any figure not found in the data. The answer screen shows each research step as it runs. The assistant declines buy, sell or hold requests.
 
 ---
 
@@ -175,7 +177,7 @@ See [docs/AUDIT.md](docs/AUDIT.md) for why FastAPI + React was chosen and why Re
 
 ## Known limitations
 
-- **Prices** are delayed or end-of-day; there's no real-time feed (see above).
+- **Prices** are delayed (about 15 minutes) or end-of-day by default. In session they auto-update every 20 seconds, but they aren't real-time. Real-time quotes need the optional, paid Zerodha Kite Connect connector, which has been tested only against mocked responses (see [docs/MARKET_DATA.md](docs/MARKET_DATA.md)).
 - **Statements** from Yahoo cover 4–5 years and don't state whether they're consolidated or standalone. Shareholding and bank metrics have to be entered from filings.
 - **PDFs** must contain text. Scanned PDFs are detected, but OCR isn't included.
 - **Alerts** are checked against the latest delayed price while the server is running. There are no push or SMS notifications.

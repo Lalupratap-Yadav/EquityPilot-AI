@@ -47,13 +47,49 @@ class Quote:
         return asdict(self)
 
 
+HOLIDAY_PROBE = "^NSEI"          # if NIFTY has not traded today well after the open, the exchange is closed (holiday)
+
+
+def _next_open(now: datetime) -> datetime:
+    d = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    if now >= d or now.weekday() >= 5:
+        d += timedelta(days=1)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
 def market_status(now: datetime | None = None) -> dict:
-    """NSE regular session 09:15-15:30 IST, Monday-Friday. Exchange holidays are not modelled."""
+    """NSE session clock (IST): pre-open 09:00-09:15, regular session 09:15-15:30, Monday-Friday.
+
+    Exchange holidays are detected from data rather than a hard-coded calendar: if, 20 minutes after the open, a freshly
+    fetched NIFTY 50 quote still belongs to an earlier day, the market is reported closed for the day."""
     now = (now or datetime.now(timezone.utc)).astimezone(IST)
+    pre_t = now.replace(hour=9, minute=0, second=0, microsecond=0)
     open_t, close_t = now.replace(hour=9, minute=15, second=0, microsecond=0), now.replace(hour=15, minute=30, second=0, microsecond=0)
-    is_open = now.weekday() < 5 and open_t <= now <= close_t
-    return {"open": is_open, "now_ist": now.strftime("%d %b %Y, %H:%M IST"),
-            "note": "Regular session 09:15-15:30 IST, Mon-Fri. Exchange holidays are not checked."}
+    weekday = now.weekday() < 5
+    phase = "open" if weekday and open_t <= now <= close_t else "pre-open" if weekday and pre_t <= now < open_t else "closed"
+    holiday = False
+    if phase == "open" and now >= open_t + timedelta(minutes=20):
+        fetched_at, q = QUOTES.peek(HOLIDAY_PROBE)
+        if q and q.get("time") and fetched_at >= (open_t + timedelta(minutes=20)).timestamp() \
+                and ist_date(q["time"]) < now.date().isoformat():
+            phase, holiday = "closed", True
+    nxt = _next_open(now) if phase != "open" else None
+    if holiday:
+        nxt = _next_open(now.replace(hour=23, minute=59))
+    if phase == "open":
+        note = "Regular session 09:15-15:30 IST. Prices here are delayed unless marked LIVE."
+    elif phase == "pre-open":
+        note = "Pre-open call auction 09:00-09:15 IST; continuous trading starts at 09:15."
+    elif holiday:
+        note = "No trading today - NIFTY 50 has not traded since the previous session (likely an exchange holiday)."
+    else:
+        note = "Market closed. Prices shown are the last available (closing) values."
+    return {"open": phase == "open", "phase": phase, "holiday": holiday, "now_ist": now.strftime("%d %b %Y, %H:%M IST"),
+            "now": now.isoformat(), "closes_at": close_t.isoformat() if phase == "open" else None,
+            "next_open": nxt.isoformat() if nxt else None,
+            "realtime": provider().realtime, "provider": provider().name, "note": note}
 
 
 class MarketDataProvider:
@@ -149,7 +185,109 @@ class YahooDelayedProvider(MarketDataProvider):
         return out
 
 
-_PROVIDER: MarketDataProvider = YahooDelayedProvider()
+class KiteConnectProvider(MarketDataProvider):
+    """Real-time quotes from Zerodha Kite Connect, using YOUR OWN Kite Connect app and daily access token.
+
+    Disabled unless configured (env vars below). Kite Connect is a paid Zerodha product (see docs/MARKET_DATA.md for the
+    cost and the daily login step). Only quotes come from Kite; chart history still comes from the delayed provider.
+    Symbols Kite does not know (e.g. some Yahoo index codes) also fall back to the delayed provider, and keep its label.
+
+        EQUITYPILOT_MARKET_PROVIDER=kite
+        KITE_API_KEY=...          (from developers.kite.trade)
+        KITE_ACCESS_TOKEN=...     (generated after your daily Kite login; expires every day)
+    """
+    name = "Zerodha Kite Connect (real-time)"
+    realtime = True
+    URL = "https://api.kite.trade/quote"
+    INDEX_MAP = {"^NSEI": "NSE:NIFTY 50", "^BSESN": "BSE:SENSEX", "^NSEBANK": "NSE:NIFTY BANK", "^INDIAVIX": "NSE:INDIA VIX",
+                 "^CNX100": "NSE:NIFTY 100", "^NSEMDCP50": "NSE:NIFTY MIDCAP 50", "^CNXIT": "NSE:NIFTY IT",
+                 "^CNXAUTO": "NSE:NIFTY AUTO", "^CNXPHARMA": "NSE:NIFTY PHARMA", "^CNXFMCG": "NSE:NIFTY FMCG",
+                 "^CNXMETAL": "NSE:NIFTY METAL", "^CNXREALTY": "NSE:NIFTY REALTY", "^CNXENERGY": "NSE:NIFTY ENERGY",
+                 "^CNXINFRA": "NSE:NIFTY INFRA", "^CNXPSUBANK": "NSE:NIFTY PSU BANK",
+                 "NIFTY_FIN_SERVICE.NS": "NSE:NIFTY FIN SERVICE", "^CNXCONSUM": "NSE:NIFTY CONSUMPTION"}
+
+    def __init__(self, api_key: str, access_token: str, fallback: MarketDataProvider):
+        self.api_key, self.access_token, self.fallback = api_key, access_token, fallback
+        self.last_error: str | None = None
+
+    def instrument(self, symbol: str) -> str | None:
+        if symbol in self.INDEX_MAP:
+            return self.INDEX_MAP[symbol]
+        if symbol.endswith(".NS"):
+            return "NSE:" + symbol[:-3]
+        if symbol.endswith(".BO"):
+            return "BSE:" + symbol[:-3]
+        return None
+
+    @staticmethod
+    def _utc_iso(ist_text: str | None) -> str | None:
+        if not ist_text:
+            return None
+        t = pd.Timestamp(str(ist_text).replace("T", " ")[:19])
+        if t.tzinfo is None:
+            t = t.tz_localize(IST)
+        return t.tz_convert("UTC").tz_localize(None).isoformat()
+
+    def quotes(self, symbols: list[str]) -> dict[str, Quote]:
+        import requests
+        syms = [s for s in symbols if not s.startswith("SAMPLE-")]
+        if not syms or config.OFFLINE:
+            return {}
+        inst = {self.instrument(s): s for s in syms if self.instrument(s)}
+        out: dict[str, Quote] = {}
+        headers = {"X-Kite-Version": "3", "Authorization": f"token {self.api_key}:{self.access_token}"}
+        names = list(inst)
+        open_now = market_status()["open"]
+        for i in range(0, len(names), 400):
+            chunk = names[i:i + 400]
+            try:
+                r = requests.get(self.URL, params=[("i", n) for n in chunk], headers=headers, timeout=10)
+                if r.status_code in (401, 403):
+                    self.last_error = "Kite access token rejected or expired - generate a new one after logging in to Kite."
+                    log.warning(self.last_error)
+                    break
+                r.raise_for_status()
+                data = r.json().get("data") or {}
+            except Exception as exc:          # network / provider failure -> delayed fallback below
+                self.last_error = f"Kite quote request failed: {exc}"
+                log.warning(self.last_error)
+                break
+            self.last_error = None
+            for name, d in data.items():
+                s = inst.get(name)
+                price = d.get("last_price")
+                if s is None or price is None:
+                    continue
+                prev = (d.get("ohlc") or {}).get("close") or None
+                out[s] = Quote(s, float(price), float(prev) if prev else None, float(price) - prev if prev else None,
+                               float(price) / prev - 1 if prev else None, d.get("volume"),
+                               self._utc_iso(d.get("last_trade_time") or d.get("timestamp")),
+                               "live" if open_now else "close", self.name)
+        missing = [s for s in syms if s not in out]
+        if missing:
+            out.update(self.fallback.quotes(missing))
+        return out
+
+    def bars(self, symbol: str, rng: str) -> pd.DataFrame:
+        return self.fallback.bars(symbol, rng)
+
+    def actions(self, symbol: str) -> list[dict]:
+        return self.fallback.actions(symbol)  # type: ignore[attr-defined]
+
+
+def _make_provider() -> MarketDataProvider:
+    import os
+    yahoo = YahooDelayedProvider()
+    if os.environ.get("EQUITYPILOT_MARKET_PROVIDER", "").lower() == "kite":
+        key, token = os.environ.get("KITE_API_KEY"), os.environ.get("KITE_ACCESS_TOKEN")
+        if key and token:
+            log.info("market data: Zerodha Kite Connect (real-time quotes), Yahoo for chart history")
+            return KiteConnectProvider(key, token, yahoo)
+        log.warning("EQUITYPILOT_MARKET_PROVIDER=kite but KITE_API_KEY / KITE_ACCESS_TOKEN are not set - using delayed data")
+    return yahoo
+
+
+_PROVIDER: MarketDataProvider = _make_provider()
 
 
 def provider() -> MarketDataProvider:
@@ -182,6 +320,57 @@ class QuoteCache:
             else:
                 out[s] = _from_db(s)
         return out
+
+
+    def peek(self, symbol: str) -> tuple[float, dict | None]:
+        """(fetched-at epoch, quote) from memory, without touching the provider."""
+        with self._lock:
+            t = self._data.get(symbol)
+        return (t[0], t[1]) if t else (0.0, None)
+
+    def refresh(self, symbols: list[str]) -> dict[str, dict]:
+        """Fetch now, regardless of age (used by the fast refresher during market hours)."""
+        if not symbols:
+            return {}
+        now = time.time()
+        fetched = provider().quotes(symbols)
+        with self._lock:
+            for s, q in fetched.items():
+                self._data[s] = (now, q.dict())
+        if fetched:
+            _persist(fetched)
+        return {s: q.dict() for s, q in fetched.items()}
+
+
+class HotSet:
+    """Symbols currently on someone's screen (WebSocket subscriptions). The fast refresher keeps these - and all
+    index symbols - fresher than the rest of the universe while the market is open."""
+
+    def __init__(self):
+        self._subs: dict[str, set[str]] = {}
+        self._lock = threading.Lock()
+
+    def set(self, client: str, symbols: list[str]) -> None:
+        with self._lock:
+            self._subs[client] = set(symbols)
+
+    def drop(self, client: str) -> None:
+        with self._lock:
+            self._subs.pop(client, None)
+
+    def symbols(self, limit: int = 120) -> list[str]:
+        with self._lock:
+            subs = set().union(*self._subs.values()) if self._subs else set()
+        base = list(BROAD_INDICES) + list(SECTOR_INDICES)
+        extra = sorted(s for s in subs if s not in base and not s.startswith("SAMPLE-"))
+        return base + extra[: max(0, limit - len(base))]
+
+    def clients(self) -> int:
+        with self._lock:
+            return len(self._subs)
+
+
+HOT = HotSet()
 
 
 def _persist(quotes: dict[str, Quote]) -> None:
@@ -329,7 +518,7 @@ def _index_history(ttl: float = 900) -> dict[str, dict]:
     return out
 
 
-def index_overview(ttl: float = 60) -> list[dict]:
+def index_overview(ttl: float = 15) -> list[dict]:
     """Latest value, change and 1-month sparkline for broad and sectoral indices (DELAYED, Yahoo).
 
     Latest value and previous close come from the shared quote cache - the same numbers the price charts,
@@ -341,7 +530,11 @@ def index_overview(ttl: float = 60) -> list[dict]:
         return []
     syms = list(BROAD_INDICES) + list(SECTOR_INDICES)
     hist = _index_history()
-    quotes = QUOTES.get(syms)
+    # read the shared cache (kept fresh by the hot refresher in session and the warmer otherwise); fetch only on a cold start
+    missing = [s for s in syms if QUOTES.peek(s)[1] is None]
+    if missing:
+        QUOTES.get(missing)
+    quotes = QUOTES.get(syms, stale_ok=True)
     out = []
     for s in syms:
         h = hist.get(s) or {"dates": [], "closes": []}

@@ -266,27 +266,51 @@ def chart(symbol: str, request: Request, range: str = Query("1Y", pattern="^(1D|
     return out
 
 
+WS_TICK = 3.0          # how often each connection checks the shared cache for changed quotes
+
+
 @router.websocket("/ws/quotes")
 async def ws_quotes(ws: WebSocket):
-    """Push quote snapshots for subscribed symbols every 30 s (provider status labelled on each quote).
-    Client sends {"subscribe": ["TCS.NS", ...]} at any time."""
+    """Stream quote updates for the subscribed symbols (provider status labelled on each quote).
+
+    Client sends {"subscribe": ["TCS.NS", ...]} at any time. The first frame is a full snapshot; after that only quotes
+    whose price or time changed are pushed, checked every few seconds against the shared cache. The server-side
+    refresher fetches subscribed symbols from the provider while the market is open, so all viewers share one request."""
     await ws.accept()
+    cid = f"ws-{id(ws)}"
     symbols: list[str] = []
+    sent: dict[str, tuple] = {}
+    last_status = 0.0
     try:
         while True:
             try:
-                msg = await asyncio.wait_for(ws.receive_json(), timeout=30 if symbols else 300)
+                msg = await asyncio.wait_for(ws.receive_json(), timeout=WS_TICK)
                 if isinstance(msg, dict) and isinstance(msg.get("subscribe"), list):
-                    symbols = [str(s)[:30] for s in msg["subscribe"]][:50]
+                    symbols = list(dict.fromkeys(str(s)[:30] for s in msg["subscribe"]))[:60]
+                    M.HOT.set(cid, symbols)
+                    sent = {}
+                    missing = [s for s in symbols if M.QUOTES.peek(s)[1] is None and not s.startswith("SAMPLE-")]
+                    if missing:                      # first viewer of a symbol: fetch it once now
+                        await asyncio.to_thread(M.QUOTES.get, missing)
             except asyncio.TimeoutError:
                 pass
-            if symbols:
-                data = await asyncio.to_thread(M.QUOTES.get, symbols, len(symbols) > 5)
-                await ws.send_json(clean({"type": "quotes", "quotes": data, "market": M.market_status()}))
+            if not symbols:
+                continue
+            data = await asyncio.to_thread(M.QUOTES.get, symbols, True)
+            changed = {s: q for s, q in data.items() if q and (q.get("price"), q.get("time")) != sent.get(s)}
+            now = time.time()
+            if changed or now - last_status > 60:
+                for s, q in changed.items():
+                    sent[s] = (q.get("price"), q.get("time"))
+                await ws.send_json(clean({"type": "quotes", "quotes": changed, "market": M.market_status(),
+                                          "full": len(changed) == len(symbols)}))
+                last_status = now
     except WebSocketDisconnect:
         return
     except Exception as exc:  # never crash the server on a bad client
         log.info("websocket closed: %s", exc)
+    finally:
+        M.HOT.drop(cid)
 
 
 @router.get("/market/status")

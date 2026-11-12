@@ -1,5 +1,38 @@
 # Changelog
 
+## [2.4.0] – 13 Nov 2026 – Live layer, research agent, premium UI
+### Added
+- **Market clock:** pre-open (09:00–09:15), open and closed phases, with "closes in" / "opens in" countdowns. Exchange holidays are detected from data: NIFTY 50 has not traded today 20 minutes after the open.
+- **Auto-updating prices in session:** every index and every symbol someone has on screen is refreshed every 20 s, with one shared provider request for all viewers. The WebSocket now sends a snapshot and then only the quotes that changed.
+- **Optional real-time quotes:** a Zerodha Kite Connect connector (your own paid app and daily token), off unless configured. If Kite fails, quotes fall back to delayed data. See docs/MARKET_DATA.md.
+- **Research agent:**
+  - Claude now plans its own research with 9 grounded tools (find company, research pack, price performance, compare, screen, market overview, news, documents, metric guide).
+  - Answers stream into the page, citing tool results as [T#], with every figure checked against the data.
+  - Uses adaptive thinking and prompt caching.
+- **Much stronger free assistant:** answers market, comparison, screening, news and concept questions without an API key, and understands company names in the question ("Compare TCS and Infosys").
+- **Premium UI:**
+  - Live index ticker under the header; prices flash green or red when they change.
+  - Market clock pill; phone tab bar (Home, Markets, Explore, Invest, Ask AI).
+  - An "Ask AI" box on Home.
+  - Assistant: research steps shown live, source chips, stop and copy buttons.
+- `/api/health` reports the market-data provider, whether it is real-time, any errors and the number of watchers.
+- Hashed static assets are cached for a year; `index.html` is never cached.
+
+### Changed
+- Home puts your watchlist and virtual portfolio right after the indices on phones.
+- Index tiles refresh every 15 s in session (2 minutes otherwise) and read the shared quote cache.
+
+### Tests
+- 18 new tests:
+  - market clock and holidays
+  - Kite parsing, mapping, expired token and provider selection
+  - hot set
+  - WebSocket snapshot-then-diff
+  - offline router
+  - company-name matching
+  - screen validation
+  - Claude tool loop: tool results, tool errors, truncated tool input never run
+
 ## [2.3.0] – 13 Nov 2026 – One source of truth for prices
 ### Fixed
 - **Index tiles and charts showed different numbers** (e.g. SENSEX tile 81,879.40 +0.95% "as of 11 Nov" against the chart's 81,911.01 +0.04%). After midnight Yahoo's daily row for the last session has an empty close until it is finalised. The tiles dropped that row and showed the day before, while the chart used intraday data.
