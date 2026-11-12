@@ -20,11 +20,15 @@ from .. import config, db
 log = logging.getLogger(__name__)
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# chart ranges -> (yfinance period, interval, label of the data)
+# chart ranges -> (yfinance period, bar interval). Daily bars up to 5 years keep the line detailed;
+# the full history uses weekly bars. "5D" is kept as an alias of "1W" for older clients.
 RANGES = {
-    "1D": ("1d", "5m"), "5D": ("5d", "15m"), "1M": ("1mo", "1h"), "6M": ("6mo", "1d"),
-    "1Y": ("1y", "1d"), "5Y": ("5y", "1wk"), "MAX": ("max", "1mo"),
+    "1D": ("1d", "5m"), "1W": ("5d", "15m"), "1M": ("1mo", "1h"), "3M": ("3mo", "1d"), "6M": ("6mo", "1d"),
+    "1Y": ("1y", "1d"), "3Y": ("5y", "1d"), "5Y": ("5y", "1d"), "MAX": ("max", "1wk"),
 }
+RANGES["5D"] = RANGES["1W"]
+INTRADAY_INTERVALS = {"5m", "15m", "30m", "1h"}
+RANGE_DAYS = {"3Y": 3 * 365}            # ranges served by slicing a longer download
 
 
 @dataclass
@@ -110,6 +114,8 @@ class YahooDelayedProvider(MarketDataProvider):
         return out
 
     def bars(self, symbol: str, rng: str) -> pd.DataFrame:
+        """OHLCV bars. Intraday bars carry a naive UTC timestamp; daily/weekly bars carry the
+        exchange (IST) calendar date - converting a daily bar to UTC would move it to the previous day."""
         period, interval = RANGES.get(rng, RANGES["1Y"])
         h = self._yf().Ticker(symbol).history(period=period, interval=interval, auto_adjust=False, timeout=20)
         if h is None or h.empty:
@@ -117,9 +123,15 @@ class YahooDelayedProvider(MarketDataProvider):
         h = h.reset_index()
         tcol = "Datetime" if "Datetime" in h.columns else "Date"
         t = pd.to_datetime(h[tcol])
-        t = t.dt.tz_convert("UTC").dt.tz_localize(None) if t.dt.tz is not None else t
-        return pd.DataFrame({"time": t, "open": h["Open"], "high": h["High"], "low": h["Low"], "close": h["Close"],
-                             "volume": h["Volume"]}).dropna(subset=["close"])
+        if interval in INTRADAY_INTERVALS:
+            t = t.dt.tz_convert("UTC").dt.tz_localize(None) if t.dt.tz is not None else t
+        else:
+            t = (t.dt.tz_convert(IST).dt.tz_localize(None) if t.dt.tz is not None else t).dt.normalize()
+        out = pd.DataFrame({"time": t, "open": h["Open"], "high": h["High"], "low": h["Low"], "close": h["Close"],
+                            "volume": h["Volume"]}).dropna(subset=["close"])
+        if rng in RANGE_DAYS and not out.empty:
+            out = out[out["time"] >= out["time"].max() - pd.Timedelta(days=RANGE_DAYS[rng])]
+        return out
 
     def actions(self, symbol: str) -> list[dict]:
         acts = self._yf().Ticker(symbol).actions

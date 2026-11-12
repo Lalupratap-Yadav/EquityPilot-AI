@@ -2,54 +2,19 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BarsChart, Donut, LinesChart, PriceChart, type Bar, type Indicators } from '../../components/charts'
+import { BarsChart, Donut, LinesChart } from '../../components/charts'
+import { StockChart } from '../../components/StockChart'
 import { DataTable, type Column } from '../../components/common'
-import { Card, ChangePill, cx, DataBadge, EmptyState, Loading, Notice, Segmented, SourceNote, Stat, TierBadge, useToast } from '../../components/ui'
+import { Card, ChangePill, cx, DataBadge, EmptyState, Loading, Notice, SourceNote, Stat, TierBadge, useToast } from '../../components/ui'
 import { api } from '../../lib/api'
 import { baseSymbol, crore, inr, isNum, mult, num, pct, timeAgo } from '../../lib/format'
 import { useInvalidate } from '../../lib/hooks'
 
 // ------------------------------------------------------------------ chart
-type Range = '1D' | '5D' | '1M' | '6M' | '1Y' | '5Y' | 'MAX'
-interface ChartResp { bars: Bar[]; indicators: Indicators; status: string; source: string; stats?: { return: number; high: number; low: number; max_drawdown: number; volatility: number | null } }
-
 export function ChartTab({ symbol, compact }: { symbol: string; compact?: boolean }) {
-  const [range, setRange] = useState<Range>(compact ? '1Y' : '1Y')
-  const [style, setStyle] = useState<'candles' | 'line' | 'area'>(compact ? 'area' : 'candles')
-  const [ov, setOv] = useState<string[]>(compact ? [] : ['sma50', 'sma200'])
-  const [panes, setPanes] = useState<('rsi' | 'macd')[]>(compact ? [] : ['rsi'])
-  const q = useQuery({ queryKey: ['chart', symbol, range], queryFn: () => api.get<ChartResp>(`/chart/${encodeURIComponent(symbol)}?range=${range}`) })
-  const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
-  const ranges: Range[] = ['1D', '5D', '1M', '6M', '1Y', '5Y', 'MAX']
   return (
-    <Card title={compact ? 'Price' : undefined}
-      action={compact ? <Segmented size="xs" value={range} onChange={setRange} options={ranges.slice(0, 6).map((r) => ({ id: r, label: r }))} /> : undefined}>
-      {!compact && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Segmented size="xs" value={range} onChange={setRange} options={ranges.map((r) => ({ id: r, label: r }))} />
-          <Segmented size="xs" value={style} onChange={setStyle} options={[{ id: 'candles', label: 'Candles' }, { id: 'line', label: 'Line' }, { id: 'area', label: 'Area' }]} />
-          {[['sma20', 'SMA 20'], ['sma50', 'SMA 50'], ['sma200', 'SMA 200'], ['ema20', 'EMA 20']].map(([k, l]) => (
-            <button key={k} className={cx('chip', ov.includes(k) && 'chip-active')} onClick={() => setOv(toggle(ov, k))}>{l}</button>))}
-          <button className={cx('chip', ov.includes('bb_upper') && 'chip-active')} onClick={() => setOv(ov.includes('bb_upper') ? ov.filter((x) => !x.startsWith('bb')) : [...ov, 'bb_upper', 'bb_lower'])}>Bollinger</button>
-          <button className={cx('chip', panes.includes('rsi') && 'chip-active')} onClick={() => setPanes(toggle(panes, 'rsi'))}>RSI</button>
-          <button className={cx('chip', panes.includes('macd') && 'chip-active')} onClick={() => setPanes(toggle(panes, 'macd'))}>MACD</button>
-        </div>
-      )}
-      {q.isLoading ? <Loading /> : (q.data?.bars.length ?? 0) === 0 ? <EmptyState title="No price data for this range" /> : (
-        <>
-          <PriceChart bars={q.data!.bars} indicators={q.data!.indicators} overlays={ov} style={style} panes={panes}
-            intraday={range === '1D' || range === '5D' || range === '1M'} height={compact ? 260 : 400} />
-          {q.data!.stats && !compact && (
-            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-              <Stat label={`Return (${range})`} value={pct(q.data!.stats.return, 2, true)} tone={q.data!.stats.return >= 0 ? 'up' : 'down'} />
-              <Stat label="High" value={inr(q.data!.stats.high)} /><Stat label="Low" value={inr(q.data!.stats.low)} />
-              <Stat label="Max drawdown" value={pct(q.data!.stats.max_drawdown)} help="Largest peak-to-trough fall in the range" />
-              <Stat label="Volatility (ann.)" value={pct(q.data!.stats.volatility)} help="Std. dev. of daily returns × √252 (ranges ≥ 6M)" />
-            </div>
-          )}
-          <SourceNote sources={[q.data!.source]} extra={<><DataBadge type={q.data!.status} /> {range === '1D' || range === '5D' ? 'Intraday bars are delayed.' : 'Prices not adjusted for dividends.'}</>} />
-        </>
-      )}
+    <Card title={compact ? 'Price' : undefined}>
+      <StockChart symbol={symbol} compact={compact} fullLink={compact ? `/company/${encodeURIComponent(symbol)}?tab=chart` : undefined} />
     </Card>
   )
 }

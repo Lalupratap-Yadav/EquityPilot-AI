@@ -1,8 +1,4 @@
-import {
-  CandlestickSeries, ColorType, createChart, CrosshairMode, HistogramSeries, LineSeries, AreaSeries,
-  type IChartApi, type Time, type UTCTimestamp,
-} from 'lightweight-charts'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -45,85 +41,6 @@ export function Sparkline({ data, width = 120, height = 36, positive }: { data: 
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.75" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   )
-}
-
-// ------------------------------------------------------------------ price chart (lightweight-charts)
-export interface Bar { time: string; open: number; high: number; low: number; close: number; volume: number | null }
-export interface Indicators { [k: string]: (number | null)[] }
-
-const toTime = (t: string, intraday: boolean): Time =>
-  (intraday ? (Math.floor(new Date(t.endsWith('Z') ? t : t + 'Z').getTime() / 1000) + 19800) as UTCTimestamp   // shift to IST for axis labels
-    : t.slice(0, 10)) as Time
-
-export function PriceChart({ bars, indicators, overlays = [], style = 'candles', intraday = false, height = 420, panes = [] }: {
-  bars: Bar[]; indicators?: Indicators; overlays?: string[]; style?: 'candles' | 'line' | 'area'; intraday?: boolean; height?: number
-  panes?: ('rsi' | 'macd')[]
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const chartRef = useRef<IChartApi | null>(null)
-  const [theme] = useTheme()
-  const colors = useSeriesColors()
-  const ax = useAxisColors()
-
-  useEffect(() => {
-    if (!ref.current || bars.length === 0) return
-    const chart = createChart(ref.current, {
-      height, autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: ax.text, fontFamily: 'Inter Variable, system-ui', panes: { separatorColor: ax.grid } },
-      grid: { vertLines: { visible: false }, horzLines: { color: ax.grid } },
-      rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false, timeVisible: intraday, secondsVisible: false },
-      crosshair: { mode: CrosshairMode.Normal },
-    })
-    chartRef.current = chart
-    const t = (b: Bar) => toTime(b.time, intraday)
-    if (style === 'candles') {
-      const s = chart.addSeries(CandlestickSeries, { upColor: UP, downColor: DOWN, borderVisible: false, wickUpColor: UP, wickDownColor: DOWN })
-      s.setData(bars.map((b) => ({ time: t(b), open: b.open, high: b.high, low: b.low, close: b.close })))
-    } else if (style === 'area') {
-      const up = bars[bars.length - 1].close >= bars[0].close
-      const c = up ? UP : DOWN
-      const s = chart.addSeries(AreaSeries, { lineColor: c, topColor: c + '33', bottomColor: c + '00', lineWidth: 2 })
-      s.setData(bars.map((b) => ({ time: t(b), value: b.close })))
-    } else {
-      const s = chart.addSeries(LineSeries, { color: colors[0], lineWidth: 2 })
-      s.setData(bars.map((b) => ({ time: t(b), value: b.close })))
-    }
-    const line = (key: string, color: string, pane = 0, width = 1.5) => {
-      const vals = indicators?.[key]
-      if (!vals) return
-      const s = chart.addSeries(LineSeries, { color, lineWidth: width as 1, priceLineVisible: false, lastValueVisible: false }, pane)
-      s.setData(bars.flatMap((b, i) => (vals[i] == null ? [] : [{ time: t(b), value: vals[i] as number }])))
-    }
-    const ovColor: Record<string, string> = { sma20: colors[3], sma50: colors[1], sma200: colors[2], ema20: colors[6], bb_upper: colors[4], bb_lower: colors[4] }
-    overlays.forEach((k) => line(k, ovColor[k] ?? colors[5]))
-    // volume as an overlay at the bottom of the price pane
-    const vol = chart.addSeries(HistogramSeries, { priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false })
-    chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } })
-    vol.setData(bars.map((b, i) => ({ time: t(b), value: b.volume ?? 0,
-      color: (i === 0 || b.close >= bars[i - 1].close ? UP : DOWN) + '55' })))
-    let pane = 1
-    if (panes.includes('rsi') && indicators?.rsi14) {
-      line('rsi14', colors[0], pane, 1.5)
-      pane++
-    }
-    if (panes.includes('macd') && indicators?.macd) {
-      const h = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false }, pane)
-      h.setData(bars.flatMap((b, i) => (indicators.macd_hist?.[i] == null ? [] : [{ time: t(b), value: indicators.macd_hist[i] as number,
-        color: (indicators.macd_hist[i] as number) >= 0 ? UP + '88' : DOWN + '88' }])))
-      line('macd', colors[0], pane)
-      line('macd_signal', colors[1], pane)
-    }
-    const ps = chart.panes()
-    ps.forEach((p, i) => i > 0 && p.setHeight(Math.round(height * 0.22)))
-    chart.timeScale().fitContent()
-    return () => {
-      chart.remove()
-      chartRef.current = null
-    }
-  }, [bars, indicators, overlays.join(','), style, intraday, height, panes.join(','), theme])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  return <div ref={ref} style={{ height: height + (panes.length ? Math.round(height * 0.22) * panes.length : 0) }} className="w-full" />
 }
 
 // ------------------------------------------------------------------ recharts wrappers

@@ -1,5 +1,15 @@
 # EquityPilot AI – Project Status
 
+## v2.2 PRICE CHARTS – complete (12 Nov 2026)
+| Item | State |
+|---|---|
+| Daily charts shifted one day early (UTC conversion) – fixed for all companies and indices | ✅ regression test |
+| Sample ranges, index 1D previous close, weekly volatility, indicator warm-up – fixed | ✅ tests |
+| New Simple / Advanced chart with hover readout, labelled reference line, legend and "How to read this chart" | ✅ screenshots: 1440 px light (incl. hover) and 390 px dark |
+| Probe of the chart API: TCS, IRCTC, NIFTY 50, SENSEX, NIFTY BANK, NIFTY IT, INDIA VIX and a sample company × every range | ✅ no empty, duplicate, unsorted or null bars |
+
+Tests: **182 passing**.
+
 ## v2.1 RESEARCH DEPTH & TRUST – complete (12 Nov 2026)
 Built in response to the "professional financial intelligence platform" brief. An audit against its 17 sections showed most items already existed in v2; this release fills the gaps listed below. Details: CHANGELOG.md [2.1.0].
 

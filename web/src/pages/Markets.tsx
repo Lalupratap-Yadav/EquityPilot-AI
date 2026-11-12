@@ -2,22 +2,19 @@ import { useQuery } from '@tanstack/react-query'
 import { Radio, Wifi, WifiOff } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { PriceChart, Sparkline, type Bar, type Indicators } from '../components/charts'
-import { Card, ChangePill, cx, DataBadge, EmptyState, Loading, Notice, PageHeader, Segmented, SourceNote, Stat } from '../components/ui'
+import { Sparkline } from '../components/charts'
+import { StockChart } from '../components/StockChart'
+import { Card, ChangePill, cx, DataBadge, EmptyState, Notice, PageHeader, Segmented } from '../components/ui'
 import { api, type IndexRow, type MarketStatus } from '../lib/api'
-import { baseSymbol, inr, num, pct, timeAgo } from '../lib/format'
+import { baseSymbol, inr, num, timeAgo } from '../lib/format'
 import { useQuoteStream } from '../lib/hooks'
 
-type Range = '1D' | '5D' | '1M' | '6M' | '1Y' | '5Y' | 'MAX'
-interface ChartResp { bars: Bar[]; indicators: Indicators; status: string; source: string; stats?: { return: number; high: number; low: number; max_drawdown: number; volatility: number | null } }
 
 export default function Markets() {
   const [params, setParams] = useSearchParams()
   const symbol = params.get('symbol') || '^NSEI'
-  const [range, setRange] = useState<Range>('1D')
   const [board, setBoard] = useState<'watchlist' | 'universe'>('universe')
   const ov = useQuery({ queryKey: ['market-overview'], queryFn: () => api.get<{ status: MarketStatus; indices: IndexRow[] }>('/market/overview'), refetchInterval: 120_000 })
-  const chart = useQuery({ queryKey: ['chart', symbol, range], queryFn: () => api.get<ChartResp>(`/chart/${encodeURIComponent(symbol)}?range=${range}`), refetchInterval: range === '1D' ? 120_000 : false })
   const wl = useQuery({ queryKey: ['watchlists'], queryFn: () => api.get<{ items: { symbol: string; name: string }[] }[]>('/watchlists') })
   const mv = useQuery({ queryKey: ['movers-20'], queryFn: () => api.get<{ active: { symbol: string; name: string }[] }>('/market/movers?n=20') })
   const boardSymbols = useMemo(() => (board === 'watchlist' ? (wl.data ?? []).flatMap((w) => w.items.map((i) => i.symbol)) : (mv.data?.active ?? []).map((m) => m.symbol)).slice(0, 25), [board, wl.data, mv.data])
@@ -43,17 +40,8 @@ export default function Markets() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-3">
-        <Card className="xl:col-span-2" title={current?.name ?? baseSymbol(symbol)} subtitle={current ? `${num(current.last, 2)} · ${pct(current.change_pct, 2, true)} today` : undefined}
-          action={<Segmented size="xs" value={range} onChange={setRange} options={(['1D', '5D', '1M', '6M', '1Y', '5Y', 'MAX'] as Range[]).map((r) => ({ id: r, label: r }))} />}>
-          {chart.isLoading ? <Loading /> : (chart.data?.bars.length ?? 0) === 0 ? <EmptyState title="No data for this range" body="Intraday data may be unavailable outside market hours for some instruments." /> : (<>
-            <PriceChart bars={chart.data!.bars} indicators={chart.data!.indicators} overlays={range === '1D' ? [] : ['sma50']} style={range === '1D' || range === '5D' ? 'area' : 'candles'}
-              intraday={range === '1D' || range === '5D' || range === '1M'} panes={range === '1D' ? [] : ['rsi', 'macd']} height={360} />
-            {chart.data!.stats && <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Stat label={`Change (${range})`} value={pct(chart.data!.stats.return, 2, true)} tone={chart.data!.stats.return >= 0 ? 'up' : 'down'} />
-              <Stat label="High" value={num(chart.data!.stats.high, 2)} /><Stat label="Low" value={num(chart.data!.stats.low, 2)} />
-              <Stat label="Max drawdown" value={pct(chart.data!.stats.max_drawdown)} /></div>}
-            <SourceNote sources={[chart.data!.source]} extra={<><DataBadge type={chart.data!.status} /> Panes: price + volume, RSI (14), MACD (12, 26, 9). Intraday bars are delayed.</>} />
-          </>)}
+        <Card className="xl:col-span-2" title={current?.name ?? baseSymbol(symbol)} subtitle={current ? `As of ${current.as_of}` : undefined}>
+          <StockChart symbol={symbol} isIndex={symbol.startsWith('^')} defaultRange="1D" />
         </Card>
 
         <Card title={<span className="inline-flex items-center gap-1.5"><Radio className="h-4 w-4 text-brand-600" />Quote board</span>}

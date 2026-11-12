@@ -1,5 +1,31 @@
 # Changelog
 
+## [2.2.0] – 12 Nov 2026 – Price charts rebuilt
+### Fixed
+- **Daily charts were one day early for every company and index.** Daily bars were converted to UTC (IST midnight is 18:30 UTC the day before) and then cut to a date, so a 12 Nov close was plotted on 11 Nov. Daily and weekly bars now carry the exchange (IST) date, and intraday bars stay UTC and are shown in IST.
+- Sample companies ignored the selected range (1M, 6M and 1Y all showed 3 years).
+- The 1D change for indices was measured from the first bar because index quotes have no previous close. It now uses the previous session's daily close, so the chart matches the index tiles.
+- Yearly volatility on the "All" range used √252 on weekly bars, which overstated it by about 2.2×. Volatility is now annualised by the actual bar spacing.
+- Moving averages, RSI, MACD and Bollinger bands on 3M–3Y charts are computed on 5 years of closes and then trimmed, so a 200-day average spans the whole 1Y chart instead of starting 200 days in.
+
+### New chart (`web/src/components/StockChart.tsx`), used on company pages and the Market Tracker
+- **Simple mode** (default):
+  - A large header shows the price and its change for the period. Hovering or dragging shows the price, change and date at that point.
+  - One line coloured green or red against a single labelled dashed reference line: previous close on 1D, start of period otherwise.
+  - No grid clutter or confusing last-price line, and the page scroll wheel is never captured by the chart.
+- **Advanced mode:**
+  - Candles, line or area; SMA 20/50/200, EMA 20, Bollinger bands, volume, and RSI (with 70/30 lines) and MACD panels.
+  - An O/H/L/C/Vol readout on hover, plus drag-to-pan and pinch or axis zoom.
+- Ranges 1D, 1W, 1M, 3M, 6M, 1Y, 3Y, 5Y and All. Daily bars are now used up to 5 years and weekly bars for All (previously weekly and monthly).
+- Smooth range switching: the previous chart stays visible, faded, while the new range loads, and the chart is not rebuilt. Bars are cached for 60 seconds (intraday) or 15 minutes (daily).
+- **Every line is named** in a legend with an explanation, and a "How to read this chart" panel explains the line, colours, reference line, volume, candles and each indicator in plain English.
+- Period high, period low, largest fall and yearly volatility are shown, with volatility hidden for intraday ranges.
+- The TradingView logo no longer overlaps the price. Attribution is a "Charts by TradingView" link under each chart, as the library licence allows.
+- The old `PriceChart` component was removed.
+
+### Tests
+- 11 new tests (`tests/test_charts.py`): IST dates for daily bars (regression), UTC for intraday bars, sample range slicing, baseline and change arithmetic, the previous close on 1D, weekly volatility annualisation and the range alias.
+
 ## [2.1.0] – 12 Nov 2026 – Research depth, plain-English explanations and source trust
 ### Valuation
 - **Summary tab** in the Valuation Lab: an estimated-value range chart that compares DCF (FCFF, with the bear-to-bull range), DCF (FCFE), peer-median P/E, P/B and EV/EBITDA, and the company's own median P/E and P/B against the market price. A permanent notice says these are model estimates, not the stock's true or exact value.
