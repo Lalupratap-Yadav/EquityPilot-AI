@@ -55,7 +55,7 @@ def fmt_metric(key: str, v) -> str:
     kind = METRIC_COLUMNS.get(key, ("", "num"))[1]
     v = float(v)
     if kind == "pct":
-        return f"{v * 100:.1f}%"
+        return f"{v * 100:+.2f}%" if key == "day_change" else f"{v * 100:.1f}%"
     if kind == "x":
         return f"{v:.2f}x"
     if kind == "inr":
@@ -184,6 +184,9 @@ class ToolBox:
             return cand
         if "." not in cand and repo.get_company(cand + ".NS"):
             return cand + ".NS"
+        best = S.resolve(s, 3)
+        if best and best[0]["score"] >= 75:
+            return best[0]["symbol"]
         hits = S.search(s, 5)
         if not hits:
             raise ToolError(f"No company found for '{raw}'. Try find_company with the company name.")
@@ -303,6 +306,10 @@ class ToolBox:
             self.ensure_tracked(sym)
             syms.append(sym)
         df = self._metrics()
+        missing = [s for s in syms if s not in set(df["symbol"])]
+        if missing:
+            from equitypilot.analytics.screener import company_metrics
+            df = pd.concat([df, pd.DataFrame([company_metrics(s) for s in missing])], ignore_index=True)
         df = df[df["symbol"].isin(syms)]
         if df.empty:
             raise ToolError("No metrics available for these companies yet (try again in a minute).")
@@ -312,8 +319,12 @@ class ToolBox:
                        "calculated", retrieved=_now_ist())
         head = "| Metric | " + " | ".join(s.rsplit(".", 1)[0] for s in df.index) + " |"
         sep = "|---" * (len(df.index) + 1) + "|"
-        body = [f"| {_label(k)} | " + " | ".join(fmt_metric(k, df.at[s, k] if k in df.columns else None) for s in df.index) + " |"
-                for k in self.COMPARE_KEYS]
+        self.last_compare = df
+        body = []
+        for k in self.COMPARE_KEYS:
+            vals = [fmt_metric(k, df.at[s, k] if k in df.columns else None) for s in df.index]
+            if any(v != "n/a" for v in vals):              # hide rows with no data for any company
+                body.append(f"| {_label(k)} | " + " | ".join(vals) + " |")
         fin = [s for s in df.index if bool(df.at[s, "is_financial"])] if "is_financial" in df.columns else []
         note = f"\nNote: {', '.join(fin)} {'is a' if len(fin) == 1 else 'are'} financial compan{'y' if len(fin) == 1 else 'ies'}: EV/EBITDA, debt/equity and ROCE are not meaningful for lenders." if fin else ""
         return f"[{sid}] Key metrics (latest fiscal year; percentages are yearly unless noted; day change is today's):\n" + \
@@ -592,47 +603,109 @@ _STOP = {"the", "and", "for", "are", "how", "what", "with", "has", "its", "this"
          "energy", "life", "steel", "motors", "industries", "finance", "capital", "first", "auto", "it", "is", "of", "in", "on"}
 
 
+Q_STOP = set("""a an the and or vs versus v with between of in on at for to from by about into over under than then
+compare comparison compared against better best worse which what whats who how is are was were be been do does did
+should would could can will may might tell me show give list find explain define meaning latest recent news today
+todays now current currently price prices stock stocks share shares equity company companies firm firms business sector
+sectors industry industries market markets index indices nifty sensex bank banks banking it tech oil gas power energy
+steel cement auto autos pharma fmcg metal metals realty infra financial finance growth grow grown growing revenue sales
+profit profits margin margins debt leverage valuation valued value cheap expensive pe pb roe roce ratio ratios risk risks
+dividend dividends return returns performance performed perform high higher highest low lower lowest top bottom year years
+month months week weeks day days quarter quarterly annual results result report reports analysis analyse analyze overview
+summary summarise summarize snapshot buy sell hold invest investing investment good bad strong weak healthy health
+balance sheet cash flow flows fcf cfo capex eps ebitda book my i we you its their this that these those there please also
+idea fact vs. long term short future outlook why when where much many more most than doing done lately past fall fell rise
+rose up down hello hi hey thanks thank state order impact effect news update updates""".split())
+
+
+def find_companies(question: str, limit: int = 6) -> tuple[list[str], list[str]]:
+    """Companies named in a question - by name, brand, everyday name or symbol, with typo tolerance.
+
+    Tries the longest word span first ('state bank of india' before 'state'). Spans containing common words must match
+    a company name exactly; single brand words that match several companies ('Adani') pick the tracked / largest one
+    and return a note listing the others. Returns (symbols, notes)."""
+    text = question.replace("’", "'")
+    toks = [re.sub(r"'s$", "", t.lower()).rstrip(".") for t in re.findall(r"[A-Za-z0-9][A-Za-z0-9&'.-]*", text)]
+    stop = [t in Q_STOP or t.isdigit() or len(t) < 2 for t in toks]
+    found: list[str] = []
+    notes: list[str] = []
+    i = 0
+    while i < len(toks) and len(found) < limit:
+        hit = None
+        for j in range(min(len(toks), i + 5), i, -1):
+            span = toks[i:j]
+            has_stop = any(stop[i:j])
+            if j - i == 1 and has_stop:
+                continue
+            phrase = " ".join(span)
+            res = S.resolve(phrase, 6, fuzzy=not has_stop)
+            if not res:
+                continue
+            top = res[0]
+            if has_stop:
+                ok = top["score"] >= 98
+            else:
+                ok = top["score"] >= 80 and (top["score"] >= 95 or top.get("tracked") or (top.get("rank") or 99999) <= 500)
+                if top.get("corrected") and top["score"] < 85:
+                    ok = False
+            if ok:
+                hit = (top, res, phrase, j)
+                break
+        if not hit:
+            i += 1
+            continue
+        top, res, phrase, j = hit
+        if top["symbol"] not in found:
+            found.append(top["symbol"])
+            same = [r for r in res[1:] if r["score"] == top["score"]]
+            if same and top["score"] <= 90:
+                notes.append(f"“{phrase}” matches several companies, so I used **{top['name']}** (the largest tracked one). "
+                             f"Others: {', '.join(r['name'] for r in same[:4])}. Name the exact company to switch.")
+            if top.get("corrected"):
+                notes.append(f"Read “{phrase}” as “{top['corrected']}”.")
+        i = j
+    return found, notes
+
+
 def mentioned_companies(question: str, limit: int = 6) -> list[str]:
-    """Tracked companies named in the question, by symbol or distinctive name word (e.g. 'Infosys', 'TCS', 'HDFC Bank')."""
-    comps = repo.list_companies()
-    ql = question.lower()
-    words = set(re.findall(r"[a-z0-9&]+", ql))
-    found: list[tuple[int, str]] = []
-    firsts: dict[str, int] = {}
-    for n in comps["name"].fillna(""):
-        w = re.findall(r"[a-z0-9&]+", re.sub(r"\b(the)\b", "", n.lower()))
-        if w:
-            firsts[w[0]] = firsts.get(w[0], 0) + 1
-    for _, c in comps.iterrows():
-        sym, name = c["symbol"], str(c["name"] or "")
-        base = sym.rsplit(".", 1)[0].lower()
-        pos = -1
-        if base in words and base not in _STOP and (len(base) >= 3 or base in ("lt",)):
-            pos = ql.find(base)
-        else:
-            nm = re.sub(r"\b(limited|ltd|the)\b\.?", "", name.lower()).strip()
-            first = re.findall(r"[a-z0-9&]+", nm)
-            if nm and len(nm) >= 4 and nm in ql:
-                pos = ql.find(nm)
-            elif len(first) > 1 and len(first[0]) >= 3 and f"{first[0]} {first[1]}" in ql and first[1] not in _STOP:
-                pos = ql.find(f"{first[0]} {first[1]}")
-            elif first and len(first[0]) >= 4 and first[0] not in _STOP and first[0] in words and firsts.get(first[0]) == 1:
-                pos = ql.find(first[0])
-        if pos >= 0:
-            found.append((pos, sym))
-    out = []
-    for _, s in sorted(found):
-        if s not in out:
-            out.append(s)
-    return out[:limit]
+    return find_companies(question, limit)[0]
+
+
+def _snapshot_md(tb: "ToolBox", sym: str) -> str:
+    """Key numbers at a glance for one company (from the universe table, or computed now)."""
+    df = tb._metrics()
+    row = df[df["symbol"] == sym]
+    if row.empty:
+        from equitypilot.analytics.screener import company_metrics
+        r = company_metrics(sym)
+    else:
+        r = row.iloc[0].to_dict()
+    keys = ["price", "day_change", "market_cap", "pe", "pb", "dividend_yield", "revenue_cagr_3y", "profit_cagr_3y", "net_margin",
+            "roe", "roce", "debt_to_equity"]
+    if r.get("is_financial"):
+        keys = [k for k in keys if k not in ("roce", "debt_to_equity")]
+    cells = [(_label(k), fmt_metric(k, r.get(k))) for k in keys if fmt_metric(k, r.get(k)) != "n/a"]
+    if not cells:
+        return ""
+    sid = tb.src(f"{sym}: key numbers", "EquityPilot calculations from filings data (Yahoo Finance) and delayed quotes", "calculated",
+                 retrieved=_now_ist())
+    half = (len(cells) + 1) // 2
+    rows = ["| Metric | Value | Metric | Value |", "|---|---|---|---|"]
+    for k in range(half):
+        a, b = cells[k], cells[k + half] if k + half < len(cells) else ("", "")
+        rows.append(f"| {a[0]} | {a[1]} | {b[0]} | {b[1]} |")
+    return f"**{r.get('name', sym)} ({sym}) at a glance** [{sid}]\n\n" + "\n".join(rows)
 
 
 def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str, list[str]]:
     """Returns (markdown answer, steps taken)."""
     q = question.strip()
     steps: list[str] = []
-    named = mentioned_companies(q)
+    named, notes = find_companies(q)
+    if named:
+        steps.append("Recognised " + ", ".join(named))
     syms = named or ([symbol] if symbol else [])
+    lead = ("\n".join(f"> {n}" for n in notes) + "\n\n") if notes else ""
     if symbol and named and symbol not in named and COMPARE_RE.search(q):
         syms = [symbol] + named
     intents = offline.detect_intents(q)
@@ -650,8 +723,11 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str
         return _market_md(txt), steps
     # comparison
     if len(syms) >= 2:
-        txt = call("compare_companies", symbols=syms[:6])
-        return ("**Comparison** (latest fiscal year; day change is today's; rule-based summary - not a recommendation)\n\n"
+        try:
+            txt = call("compare_companies", symbols=syms[:6])
+        except ToolError as exc:
+            return lead + f"I could not compare these companies: {exc}", steps
+        return lead + ("**Comparison** (latest fiscal year; day change is today's; rule-based summary - not a recommendation)\n\n"
                 + txt.split("\n", 1)[1] + "\n\n" + _compare_reading(tb, syms[:6])
                 + f"\n\nSource: [{tb.sources[-1]['ID']}] {tb.sources[-1]['Source']}. Open **Compare** for charts and more metrics."), steps
     # screens (need a list-like question: "top IT companies by ROE", "debt-free stocks", "highest dividend yield")
@@ -689,6 +765,11 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str
         for b in ctx.blocks:            # register the context blocks as sources (same IDs the answer cites: S1..)
             tb.texts.append(b.text)
         body = offline.answer(ctx, q)
+        if "overview" in intents or "valuation" in intents:
+            snap = _snapshot_md(tb, sym)
+            if snap:
+                body = snap + "\n\n" + body
+        body = lead + body
         extra = ""
         if PERF_RE.search(q):
             try:
@@ -732,8 +813,10 @@ def _market_md(txt: str) -> str:
 
 
 def _compare_reading(tb: ToolBox, syms: list[str]) -> str:
-    df = tb._metrics()
-    df = df[df["symbol"].isin(syms)].set_index("symbol")
+    df = getattr(tb, "last_compare", None)
+    if df is None:
+        df = tb._metrics()
+        df = df[df["symbol"].isin(syms)].set_index("symbol")
     if df.empty:
         return ""
     out = ["**What stands out** (automated reading of the table above)"]

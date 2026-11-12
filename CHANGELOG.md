@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.4.1] – 13 Nov 2026 – Smarter company recognition, typo-tolerant search, Groww-style chart
+### Fixed
+- **AI did not recognise companies** such as "Compare Adani and Tata Power" and showed the help text. A new resolver understands:
+  - names, brands, everyday names (SBI, L&T, HUL, Zomato) and symbols
+  - multi-word names that contain common words ("State Bank of India", "HDFC Bank")
+  - typos ("Relaince")
+  - ambiguous brands: "Tata" uses the largest tracked company and lists the others
+- **Search found nothing for typos** ("Adani Enterprwses"). It now corrects spelling against the company-name list and shows "Showing results for …".
+- Compare works for companies that are not yet in the universe table, hides rows with no data and signs the day change.
+
+### Improved
+- **Simple chart redesigned** to the clean look of Groww and Kite: a single green or red line with no axes or grid, a faint dashed previous-close line, a floating "value | time" tag while hovering, and range buttons under the chart. Charts open on **1D** by default.
+- Single-company answers start with a key-numbers table.
+
 ## [2.4.0] – 13 Nov 2026 – Live layer, research agent, premium UI
 ### Added
 - **Market clock:** pre-open (09:00–09:15), open and closed phases, with "closes in" / "opens in" countdowns. Exchange holidays are detected from data: NIFTY 50 has not traded today 20 minutes after the open.

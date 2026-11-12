@@ -185,15 +185,40 @@ def test_offline_router_concept_and_help(client):
     assert _stream(client, "hello there")[-1]["text"].startswith(A.HELP_PREFIX)
 
 
-def test_mentioned_companies_ignores_ambiguous_words(monkeypatch):
-    import pandas as pd
-    comps = pd.DataFrame({"symbol": ["TATAMOTORS.NS", "TATASTEEL.NS", "INFY.NS", "SBIN.NS"],
-                          "name": ["Tata Motors Limited", "Tata Steel Limited", "Infosys Limited", "State Bank of India"]})
-    monkeypatch.setattr(A.repo, "list_companies", lambda *a, **k: comps)
-    assert A.mentioned_companies("compare infosys and tata steel") == ["INFY.NS", "TATASTEEL.NS"]
-    assert A.mentioned_companies("what about tata?") == []                 # ambiguous on its own
-    assert A.mentioned_companies("state of the market") == []
-    assert A.mentioned_companies("is sbin cheap") == ["SBIN.NS"]
+def _fake_index(monkeypatch):
+    from equitypilot.data import securities as S
+    rows = [("ADANIENT.NS", "Adani Enterprises Ltd.", 30, True), ("ADANIPORTS.NS", "Adani Ports and Special Economic Zone Limited", 20, True),
+            ("ADANIPOWER.NS", "Adani Power Limited", 25, True), ("TATAPOWER.NS", "The Tata Power Company Limited", 60, True),
+            ("TCS.NS", "Tata Consultancy Services Limited", 2, True), ("TATASTEEL.NS", "Tata Steel Limited", 40, True),
+            ("SBIN.NS", "State Bank of India", 5, True), ("INFY.NS", "Infosys Limited", 6, True), ("HDFCBANK.NS", "HDFC Bank Limited", 1, True),
+            ("HDFCLIFE.NS", "HDFC Life Insurance Company Limited", 50, True), ("BESTAGRO.NS", "Best Agrolife Limited", 1800, False),
+            ("ETERNAL.NS", "Eternal Limited", 35, True), ("RELIANCE.NS", "Reliance Industries Limited", 3, True)]
+    idx = S.build_index([{"symbol": s, "name": n, "rank": r, "category": None, "tracked": t} for s, n, r, t in rows])
+    monkeypatch.setattr(S, "name_index", lambda ttl=600: idx)
+    return S
+
+
+def test_find_companies_brands_typos_and_common_words(monkeypatch):
+    _fake_index(monkeypatch)
+    assert A.find_companies("Compare Adani and Tata Power") == (["ADANIENT.NS", "TATAPOWER.NS"], [])
+    assert A.find_companies("Compare Adani Ports and Adani Power")[0] == ["ADANIPORTS.NS", "ADANIPOWER.NS"]
+    assert A.find_companies("How is HDFC Bank doing?")[0] == ["HDFCBANK.NS"]
+    assert A.find_companies("Compare State Bank of India with Infosys")[0] == ["SBIN.NS", "INFY.NS"]
+    syms, notes = A.find_companies("Is Relaince debt high")
+    assert syms == ["RELIANCE.NS"] and "reliance" in notes[0]
+    syms, notes = A.find_companies("what about tata?")                 # ambiguous brand -> largest + a note
+    assert syms == ["TCS.NS"] and "several companies" in notes[0]
+    assert A.find_companies("state of the market")[0] == []
+    assert A.find_companies("best dividend stocks")[0] == []           # common word, small unrelated company
+    assert A.find_companies("tell me about zomato")[0] == ["ETERNAL.NS"]
+
+
+def test_search_tolerates_typos(monkeypatch):
+    S = _fake_index(monkeypatch)
+    r = S.resolve("Adani Enterprwses")
+    assert r[0]["symbol"] == "ADANIENT.NS" and r[0]["corrected"] == "adani enterprises"
+    assert S.resolve("tata powr")[0]["symbol"] == "TATAPOWER.NS"
+    assert S.resolve("hdfc")[0]["symbol"] == "HDFCBANK.NS"
 
 
 def test_screen_tool_validates_and_excludes_lenders():

@@ -99,6 +99,7 @@ export interface CompanyCardData {
 }
 
 export interface SearchResult {
+  did_you_mean?: string
   symbol: string
   name: string
   sector: string | null

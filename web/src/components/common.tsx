@@ -182,6 +182,8 @@ export function SearchPalette({ open, onClose }: { open: boolean; onClose: () =>
             </button>
           </li>
         ))}
+        {(() => { const dym = (res.data?.results ?? []).find((r) => r.did_you_mean)?.did_you_mean
+          return dym && q.trim() ? <li className="order-first px-3 pb-1 text-xs muted">Showing results for <b className="text-slate-700 dark:text-slate-200">{dym}</b></li> : null })()}
         {q.trim() && res.isFetched && items.length === 0 && <li className="px-3 py-6 text-center text-sm muted">No matches. Try a company name, NSE symbol or ISIN.</li>}
         {!q.trim() && items.length === 0 && <li className="px-3 py-4 text-sm muted">Search 5,500+ NSE/BSE-listed companies by name, symbol or ISIN.</li>}
       </ul>

@@ -1,8 +1,9 @@
 // Price chart for companies and indices.
 //
-// Simple mode (default): one clean line, coloured by whether the price is above or below the reference
-// (previous close on 1D, start of period otherwise), a single dashed reference line, and a header that shows
-// the price and change at whatever point you hover or drag over. No page-scroll hijacking.
+// Simple mode (default, the look investors know from Groww/Kite): one clean line with no axes or grid, coloured green or
+// red by whether the price is above or below the reference (previous close on 1D, start of period otherwise), a faint
+// dashed reference line, a floating "value | time" label above the finger/cursor, and range buttons under the chart.
+// The header shows the price and change at whatever point you hover or drag over. No page-scroll hijacking.
 // Advanced mode: candles / line / area, moving averages, Bollinger bands, volume, RSI and MACD panes with
 // an O/H/L/C readout and a colour legend for every line drawn.
 //
@@ -41,7 +42,7 @@ export interface LiveQuote { price: number | null; prev_close: number | null; ti
 type Style = 'line' | 'candles' | 'area'
 type Overlay = 'sma20' | 'sma50' | 'sma200' | 'ema20' | 'bb'
 type Pane = 'rsi' | 'macd'
-interface Hover { close: number; open: number; high: number; low: number; volume: number | null; time: Time }
+interface Hover { close: number; open: number; high: number; low: number; volume: number | null; time: Time; x?: number; w?: number }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -60,6 +61,14 @@ function timeParts(t: Time): { y: number; m: number; d: number; hh: number; mm: 
   return { y: dt.getUTCFullYear(), m: dt.getUTCMonth(), d: dt.getUTCDate(), hh: 0, mm: 0, dow: dt.getUTCDay(), hasTime: false }
 }
 const two = (n: number) => String(n).padStart(2, '0')
+/** Short label for the floating hover tag: '11:23 AM' (intraday 1D), '12 Nov, 11:23 AM' (other intraday), '12 Nov 2026' (daily). */
+function shortTime(t: Time, range: Range): string {
+  const p = timeParts(t)
+  if (!p.hasTime) return `${p.d} ${MONTHS[p.m]} ${p.y}`
+  const h12 = ((p.hh + 11) % 12) + 1
+  const hm = `${h12}:${two(p.mm)} ${p.hh < 12 ? 'AM' : 'PM'}`
+  return range === '1D' ? hm : `${p.d} ${MONTHS[p.m]}, ${hm}`
+}
 function fullTime(t: Time): string {
   const p = timeParts(t)
   return p.hasTime ? `${p.d} ${MONTHS[p.m]} ${p.y}, ${two(p.hh)}:${two(p.mm)} IST` : `${DAYS[p.dow]}, ${p.d} ${MONTHS[p.m]} ${p.y}`
@@ -102,9 +111,9 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter Variable, system-ui', fontSize: 11,
         attributionLogo: false, panes: { separatorColor: c.grid, enableResize: false } },
       grid: { vertLines: { visible: false }, horzLines: { visible: !simple, color: c.grid } },
-      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: showVolume ? 0.22 : 0.08 } },
+      rightPriceScale: { visible: !simple, borderVisible: false, scaleMargins: { top: simple ? 0.1 : 0.12, bottom: showVolume ? 0.22 : 0.08 } },
       timeScale: {
-        borderVisible: false, timeVisible: data.intraday, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true, lockVisibleTimeRangeOnResize: true,
+        visible: !simple, borderVisible: false, timeVisible: data.intraday, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true, lockVisibleTimeRangeOnResize: true,
         tickMarkFormatter: (t: Time, type: TickMarkType) => {
           const p = timeParts(t)
           if (type === TickMarkType.Year) return String(p.y)
@@ -116,7 +125,8 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
       localization: { priceFormatter: fmtPrice, timeFormatter: (t: Time) => fullTime(t) },
       crosshair: {
         mode: simple ? CrosshairMode.Magnet : CrosshairMode.Normal,
-        vertLine: { color: c.cross, style: LineStyle.Dashed, width: 1, labelBackgroundColor: c.theme === 'dark' ? '#334155' : '#475569' },
+        vertLine: { color: simple ? (c.theme === 'dark' ? '#475569' : '#cbd5e1') : c.cross, style: simple ? LineStyle.Solid : LineStyle.Dashed, width: 1,
+          labelVisible: !simple, labelBackgroundColor: c.theme === 'dark' ? '#334155' : '#475569' },
         horzLine: { visible: !simple, labelVisible: !simple, color: c.cross, style: LineStyle.Dashed, labelBackgroundColor: c.theme === 'dark' ? '#334155' : '#475569' },
       },
       // never hijack the page's scroll wheel; drag to pan and pinch to zoom in advanced mode only
@@ -127,7 +137,10 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
     extra.current = {}
     refLine.current = null
     const common = { priceLineVisible: false, lastValueVisible: true }
-    if (simple || style === 'area') {
+    if (simple) {
+      main.current = chart.addSeries(LineSeries, { priceLineVisible: false, lastValueVisible: false, lineWidth: 2, crosshairMarkerRadius: 5,
+        crosshairMarkerBorderWidth: 2, crosshairMarkerBorderColor: c.bg, lineType: 0 })
+    } else if (style === 'area') {
       main.current = chart.addSeries(AreaSeries, { ...common, lineWidth: 2, crosshairMarkerRadius: 5, crosshairMarkerBorderWidth: 2, crosshairMarkerBorderColor: c.bg })
     } else if (style === 'line') {
       main.current = chart.addSeries(LineSeries, { ...common, color: palette[0], lineWidth: 2, crosshairMarkerRadius: 4 })
@@ -164,7 +177,8 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
       if (!d) return onHover(null)
       const v = extra.current.volume ? (param.seriesData.get(extra.current.volume) as { value?: number } | undefined)?.value ?? null : null
       const close = d.close ?? d.value
-      onHover({ close, open: d.open ?? close, high: d.high ?? close, low: d.low ?? close, volume: v, time: param.time! })
+      onHover({ close, open: d.open ?? close, high: d.high ?? close, low: d.low ?? close, volume: v, time: param.time!,
+        x: param.point?.x, w: ref.current?.clientWidth })
     }
     chart.subscribeCrosshairMove(onMove)
     return () => {
@@ -183,7 +197,9 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
     const base = data.baseline?.value ?? data.bars[0].close
     const last = data.bars[data.bars.length - 1].close
     const color = last >= base ? UP : DOWN
-    if (mode === 'simple' || style === 'area') {
+    if (mode === 'simple') {
+      s.applyOptions({ color })
+    } else if (style === 'area') {
       s.applyOptions({ lineColor: color, topColor: color + '38', bottomColor: color + '03' })
     }
     const pad: { time: Time }[] = []
@@ -199,8 +215,10 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
       s.setData([...data.bars.map((b) => ({ time: t(b), value: b.close })), ...pad])
     }
     if (refLine.current) s.removePriceLine(refLine.current)
-    refLine.current = s.createPriceLine({ price: base, color: c.ref, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true,
-      title: data.baseline?.label === 'Previous close' ? 'Prev close' : 'Start' })
+    refLine.current = mode === 'simple'
+      ? s.createPriceLine({ price: base, color: c.theme === 'dark' ? '#475569' : '#cbd5e1', lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' })
+      : s.createPriceLine({ price: base, color: c.ref, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true,
+        title: data.baseline?.label === 'Previous close' ? 'Prev close' : 'Start' })
     const ind = data.indicators ?? {}
     const series = (key: string, vals?: (number | null)[]) => {
       const x = extra.current[key]
@@ -241,8 +259,8 @@ function Explainer({ mode, range, isIndex }: { mode: 'simple' | 'advanced'; rang
     ['The line', `The ${isIndex ? 'index value' : 'share price'} at the close of each ${unit} in the selected period.`],
     ['Green or red', `Green when the latest ${isIndex ? 'value' : 'price'} is above the dashed reference line, red when it is below. It describes the past, not a forecast.`],
     ['Dashed grey line', range === '1D' ? "Yesterday's closing price (\"Prev close\"). Today's gain or loss is measured from it, as exchanges do." : 'The price at the start of the selected period ("Start"). The change shown at the top is measured from it.'],
-    ['Number on the right edge', 'The most recent value. Prices are delayed or end-of-day, as labelled below the chart.'],
-    ['Hover or drag', 'Move along the chart to see the value at that moment and how much it had changed since the start.'],
+    ['Big number at the top', 'The most recent value, and how much it has changed in the selected period. Prices are delayed or end-of-day, as labelled below the chart.'],
+    ['Hover or drag', 'Move along the chart: a small tag shows the value and time at that point, and the big number shows the change up to then.'],
     ...(isIndex ? [] : [['Volume bars (optional)', 'How many shares changed hands in each bar. Green when the price closed higher than the bar before, red when lower. Unusually tall bars mean unusual interest.']]),
   ]
   const advanced = [
@@ -271,11 +289,11 @@ function Explainer({ mode, range, isIndex }: { mode: 'simple' | 'advanced'; rang
 }
 
 // ------------------------------------------------------------------ public component
-export function StockChart({ symbol, isIndex = false, compact = false, defaultRange = '1Y', height, fullLink, live }: {
+export function StockChart({ symbol, isIndex = false, compact = false, defaultRange = '1D', height, fullLink, live }: {
   symbol: string; isIndex?: boolean; compact?: boolean; defaultRange?: Range; height?: number; fullLink?: string; live?: LiveQuote | null
 }) {
   const [range, setRange] = useState<Range>(defaultRange)
-  const [mode, setMode] = useStored<'simple' | 'advanced'>('ep-chart-mode', 'simple')
+  const [mode, setMode] = useStored<'simple' | 'advanced'>('ep-chart-mode-v2', 'simple')
   const effMode = compact ? 'simple' : mode
   const [style, setStyle] = useStored<Style>('ep-chart-style', 'candles')
   const [overlays, setOverlays] = useState<Overlay[]>(['sma50', 'sma200'])
@@ -320,6 +338,19 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
   const up = (head?.abs ?? 0) >= 0
   const loadingFirst = q.isLoading && !d
+  const rangeBar = (
+    <div className={cx('flex items-center gap-0.5 overflow-x-auto pb-1 sm:gap-1', effMode === 'simple' ? 'mt-2 border-t border-slate-100 pt-3 dark:border-ink-700' : 'mt-3')} role="tablist" aria-label="Time range">
+      {(compact ? RANGES.filter((r) => r !== '3Y') : RANGES).map((r) => (
+        <button key={r} role="tab" aria-selected={range === r} onClick={() => { setRange(r); setHover(null) }}
+          className={cx('shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors sm:px-3',
+            range === r ? (up ? 'bg-up/10 text-up ring-1 ring-up/30' : 'bg-down/10 text-down ring-1 ring-down/30') : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-ink-800 dark:hover:text-slate-100')}>
+          {r === 'MAX' ? 'All' : r}
+        </button>
+      ))}
+      {compact && fullLink && <Link to={fullLink} className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:underline dark:text-brand-300"><Maximize2 className="h-3 w-3" />Full chart</Link>}
+    </div>
+  )
+  const tagLeft = hover?.x != null && hover.w ? Math.min(Math.max(hover.x, 70), hover.w - 70) : null
 
   return (
     <div className="min-w-0">
@@ -335,17 +366,7 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
         {!compact && <Segmented size="xs" value={mode} onChange={setMode} options={[{ id: 'simple', label: 'Simple' }, { id: 'advanced', label: 'Advanced' }]} />}
       </div>
 
-      {/* range selector */}
-      <div className="mt-3 flex items-center gap-0.5 overflow-x-auto pb-1 sm:gap-1" role="tablist" aria-label="Time range">
-        {(compact ? RANGES.filter((r) => r !== '3Y') : RANGES).map((r) => (
-          <button key={r} role="tab" aria-selected={range === r} onClick={() => { setRange(r); setHover(null) }}
-            className={cx('shrink-0 rounded-full px-2 py-1 text-xs font-semibold transition-colors sm:px-3',
-              range === r ? (up ? 'bg-up/10 text-up' : 'bg-down/10 text-down') : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-ink-800 dark:hover:text-slate-100')}>
-            {r === 'MAX' ? 'All' : r}
-          </button>
-        ))}
-        {compact && fullLink && <Link to={fullLink} className="ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:underline dark:text-brand-300"><Maximize2 className="h-3 w-3" />Full chart</Link>}
-      </div>
+      {effMode === 'advanced' && rangeBar}
 
       {/* advanced toolbar */}
       {effMode === 'advanced' && (
@@ -357,9 +378,6 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
           <button className={cx('chip', panes.includes('rsi') && 'chip-active')} onClick={() => setPanes(toggle(panes, 'rsi'))}>RSI</button>
           <button className={cx('chip', panes.includes('macd') && 'chip-active')} onClick={() => setPanes(toggle(panes, 'macd'))}>MACD</button>
         </div>
-      )}
-      {effMode === 'simple' && !compact && d?.has_volume && !isIndex && (
-        <div className="mt-2"><button className={cx('chip', simpleVolume && 'chip-active')} aria-pressed={simpleVolume} onClick={() => setSimpleVolume(!simpleVolume)}>{simpleVolume ? '✓ Volume shown' : '+ Show volume'}</button></div>
       )}
 
       {/* O/H/L/C readout in advanced mode */}
@@ -374,7 +392,14 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
       })() : null}
 
       {/* chart */}
-      <div className="relative mt-2" onMouseLeave={() => setHover(null)}>
+      <div className={cx('relative', effMode === 'simple' ? 'mt-1 pt-6' : 'mt-2')} onMouseLeave={() => setHover(null)}>
+        {effMode === 'simple' && hover && tagLeft != null && (
+          <div className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap text-xs" style={{ left: tagLeft }}>
+            <span className="num font-semibold text-slate-800 dark:text-slate-100">{fmt(hover.close)}</span>
+            <span className="mx-1 text-slate-300 dark:text-ink-600">|</span>
+            <span className="text-slate-500 dark:text-slate-400">{shortTime(hover.time, range)}</span>
+          </div>
+        )}
         {loadingFirst ? <div className="animate-pulse rounded-xl bg-slate-100 dark:bg-ink-800" style={{ height: h }} />
           : !d?.bars.length ? (
             <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 text-center dark:border-ink-700" style={{ height: h }}>
@@ -388,6 +413,7 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
           )}
         {q.isFetching && q.isPlaceholderData && <div className="absolute right-2 top-2 h-4 w-4 animate-spin rounded-full border-2 border-brand-500 border-t-transparent" aria-label="Loading" />}
       </div>
+      {effMode === 'simple' && rangeBar}
 
       {/* legend: every line on the chart is named */}
       {d?.bars.length ? (
@@ -397,6 +423,8 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
           <LegendItem swatch={<Swatch color="#94a3b8" dashed />} label={`${d.baseline?.label === 'Previous close' ? 'Previous close' : 'Start of period'} ${fmt(d.baseline?.value ?? d.bars[0].close)}`}
             help="The reference the change at the top is measured from. Above it = gain, below it = loss." />
           {showVolume && <LegendItem swatch={<span className="inline-flex gap-0.5"><Swatch color={UP + '88'} bar /><Swatch color={DOWN + '88'} bar /></span>} label="Volume" help="Shares traded in each bar." />}
+          {effMode === 'simple' && !compact && d.has_volume && !isIndex && (
+            <button className={cx('chip ml-auto', simpleVolume && 'chip-active')} aria-pressed={simpleVolume} onClick={() => setSimpleVolume(!simpleVolume)}>{simpleVolume ? '✓ Volume shown' : '+ Show volume'}</button>)}
           {effMode === 'advanced' && overlays.map((o) => {
             const meta: Record<Overlay, [string, string, string]> = { sma20: ['SMA 20', palette[3], 'Average close of the last 20 bars'], sma50: ['SMA 50', palette[1], 'Average close of the last 50 bars'],
               sma200: ['SMA 200', palette[2], 'Average close of the last 200 bars'], ema20: ['EMA 20', palette[6], 'Exponential average weighting recent bars more'], bb: ['Bollinger bands', palette[4], '20-bar average ± 2 standard deviations'] }

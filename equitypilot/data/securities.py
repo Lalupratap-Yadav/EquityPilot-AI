@@ -142,7 +142,160 @@ def category_for(symbol: str) -> str | None:
     return df["category"].iloc[0] if len(df) else None
 
 
+# ------------------------------------------------------------------ name resolver (typo-tolerant), shared by search and the AI
+import difflib  # noqa: E402
+import re  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+_LEGAL = re.compile(r"\b(limited|ltd|the|company|co|corporation|corp|inc|plc|pvt|private)\b")
+# everyday names for companies whose official name or symbol people don't type
+ALIASES = {"sbi": "SBIN", "state bank": "SBIN", "l and t": "LT", "larsen": "LT", "m and m": "M&M", "mahindra": "M&M",
+           "hul": "HINDUNILVR", "hindustan unilever": "HINDUNILVR", "ril": "RELIANCE", "airtel": "BHARTIARTL",
+           "bharti airtel": "BHARTIARTL", "maruti": "MARUTI", "kotak": "KOTAKBANK", "kotak bank": "KOTAKBANK",
+           "icici": "ICICIBANK", "axis": "AXISBANK", "indusind": "INDUSINDBK", "bajaj finance": "BAJFINANCE",
+           "bajaj finserv": "BAJAJFINSV", "hero": "HEROMOTOCO", "hero motocorp": "HEROMOTOCO", "dr reddy": "DRREDDY",
+           "dr reddys": "DRREDDY", "sun pharma": "SUNPHARMA", "ongc": "ONGC", "ntpc": "NTPC", "zomato": "ETERNAL",
+           "paytm": "PAYTM", "nykaa": "NYKAA", "irctc": "IRCTC", "lic": "LICI", "hdfc life": "HDFCLIFE", "hcl": "HCLTECH",
+           "tech mahindra": "TECHM", "asian paints": "ASIANPAINT", "ultratech": "ULTRACEMCO", "jsw steel": "JSWSTEEL",
+           "tata steel": "TATASTEEL", "tata power": "TATAPOWER", "tcs": "TCS", "infosys": "INFY", "wipro": "WIPRO",
+           "adani": "ADANIENT", "hdfc": "HDFCBANK", "jsw": "JSWSTEEL", "godrej": "GODREJCP", "vedanta": "VEDL"}
+
+
+def norm(text: str) -> str:
+    s = (text or "").lower().replace("&", " and ").replace("’", "'")
+    s = re.sub(r"'s\b", "", s)
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", s).split())
+
+
+def core_name(name: str) -> str:
+    """'The Tata Power Company Limited' -> 'tata power'."""
+    return " ".join(_LEGAL.sub(" ", norm(name)).split())
+
+
+_IDX: dict = {"t": 0.0, "rows": [], "vocab": [], "by_base": {}}
+_IDX_LOCK = threading.Lock()
+
+
+def name_index(ttl: float = 600) -> dict:
+    """In-memory index of tracked companies + the securities master (about 5,500 names)."""
+    if time.time() - _IDX["t"] < ttl and _IDX["rows"]:
+        return _IDX
+    with _IDX_LOCK:
+        if time.time() - _IDX["t"] < ttl and _IDX["rows"]:
+            return _IDX
+        comps = db.read_df(db.select(db.companies.c.symbol, db.companies.c.name, db.companies.c.is_sample))
+        s = db.securities.c
+        sec = db.read_df(db.select(s.name, s.nse_symbol, s.bse_symbol, s.mcap_rank, s.category))
+        rows: dict[str, dict] = {}
+        for _, r in sec.iterrows():
+            sym = f"{r['nse_symbol']}.NS" if r["nse_symbol"] else (f"{r['bse_symbol']}.BO" if r["bse_symbol"] else None)
+            if not sym:
+                continue
+            rank = int(r["mcap_rank"]) if pd.notna(r["mcap_rank"]) else None
+            rows[sym] = {"symbol": sym, "name": r["name"], "rank": rank, "category": r["category"], "tracked": False}
+        for _, r in comps.iterrows():
+            e = rows.setdefault(r["symbol"], {"symbol": r["symbol"], "name": r["name"], "rank": None, "category": None})
+            e.update(tracked=True, name=r["name"] or e["name"], sample=bool(r["is_sample"]))
+        _IDX.update(build_index(list(rows.values())), t=time.time())
+    return _IDX
+
+
+def build_index(rows: list[dict]) -> dict:
+    """rows: {symbol, name, rank, category, tracked} -> searchable index (also used by tests)."""
+    vocab: set[str] = set()
+    by_base: dict[str, list[dict]] = {}
+    for e in rows:
+        e["core"] = core_name(e["name"] or "")
+        e["tokens"] = e["core"].split()
+        e["base"] = norm(e["symbol"].rsplit(".", 1)[0]).replace(" ", "")
+        by_base.setdefault(e["base"], []).append(e)
+        vocab.update(t for t in e["tokens"] if len(t) >= 3)
+        if len(e["base"]) >= 3:
+            vocab.add(e["base"])
+    return {"rows": rows, "vocab": sorted(vocab), "by_base": by_base}
+
+
+def correct_spelling(text: str) -> str:
+    """Fix typos word by word against the company-name vocabulary ('enterprwses' -> 'enterprises')."""
+    idx = name_index()
+    vocab = idx["vocab"]
+    vs = set(vocab)
+    out = []
+    for t in norm(text).split():
+        if len(t) >= 4 and not t.isdigit() and t not in vs:
+            m = difflib.get_close_matches(t, vocab, n=1, cutoff=0.78)
+            out.append(m[0] if m else t)
+        else:
+            out.append(t)
+    return " ".join(out)
+
+
+def _rank_key(score: int, e: dict):
+    return (-score, not e.get("tracked"), e.get("rank") or 99999)
+
+
+def resolve(phrase: str, limit: int = 6, fuzzy: bool = True) -> list[dict]:
+    """Best company matches for a phrase, highest score first. Scores: 100 symbol, 99 alias, 98 exact name,
+    90 name starts with the phrase, 80 every word is a prefix of the name's words, 75 symbol prefix.
+    Typo-corrected matches score 5 lower and carry corrected=<text>."""
+    idx = name_index()
+    raw = (phrase or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9&-]+\.(NS|BO)", raw, re.I):
+        e = next((x for x in idx["rows"] if x["symbol"].upper() == raw.upper()), None)
+        return [{**e, "score": 100}] if e else []
+    p = core_name(raw)
+    if not p:
+        return []
+    pc = p.replace(" ", "")
+    hits: list[tuple[int, dict]] = []
+    alias = ALIASES.get(p)
+    if alias:
+        hits += [(99, e) for e in idx["by_base"].get(norm(alias).replace(" ", ""), [])]
+    ptoks = p.split()
+    for e in idx["rows"]:
+        if e["base"] == pc:
+            s = 100
+        elif e["core"] == p:
+            s = 98
+        elif e["core"].startswith(p + " "):
+            s = 90
+        elif len(p) >= 3 and e["tokens"] and e["tokens"][0].startswith(ptoks[0]) and \
+                all(any(t.startswith(pt) for t in e["tokens"]) for pt in ptoks):
+            s = 80
+        elif len(pc) >= 3 and e["base"].startswith(pc):
+            s = 75
+        else:
+            continue
+        hits.append((s, e))
+    if not hits and fuzzy:
+        fixed = correct_spelling(p)
+        if fixed != p:
+            return [{**h, "score": h["score"] - 5, "corrected": fixed} for h in resolve(fixed, limit, fuzzy=False)]
+    best: dict[str, tuple[int, dict]] = {}
+    for s, e in hits:
+        if e["symbol"] not in best or best[e["symbol"]][0] < s:
+            best[e["symbol"]] = (s, e)
+    ordered = sorted(best.values(), key=lambda x: _rank_key(*x))
+    return [{**e, "score": s} for s, e in ordered[:limit]]
+
+
 def search(query: str, limit: int = 12) -> list[dict]:
+    """Search tracked companies and the full securities master by name, NSE/BSE symbol or ISIN.
+    Falls back to typo-tolerant matching when the plain search finds little."""
+    res = _search_plain(query, limit)
+    if len(res) < min(3, limit) and len((query or "").strip()) >= 3:
+        have = {r["symbol"] for r in res}
+        for h in resolve(query, limit):
+            if h["symbol"] in have:
+                continue
+            res.append({"symbol": h["symbol"], "name": h["name"], "sector": None, "industry": None, "tracked": h.get("tracked", False),
+                        "is_sample": bool(h.get("sample")), "category": h.get("category"), "score": h["score"] - 50,
+                        **({"did_you_mean": h["corrected"]} if h.get("corrected") else {})})
+    return res[:limit]
+
+
+def _search_plain(query: str, limit: int = 12) -> list[dict]:
     """Search tracked companies and the full securities master by name, NSE/BSE symbol or ISIN."""
     q = (query or "").strip()
     if not q:
