@@ -6,6 +6,7 @@ so the UI can always show where a number came from and how fresh it is.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Iterable
@@ -148,6 +149,7 @@ documents = Table(
     Column("pages", Integer),
     Column("text", Text),
     Column("uploaded_at", DateTime),
+    Column("user_id", Integer, index=True),               # NULL = legacy/shared document
 )
 
 bank_metrics = Table(
@@ -175,7 +177,174 @@ holdings = Table(
     Column("avg_cost", Float, nullable=False),
     Column("buy_date", Date),
     Column("notes", String),
+    Column("user_id", Integer, index=True),               # NULL = legacy single-user (Streamlit) data
 )
+
+# ================================================================ v2 platform tables
+users = Table(
+    "users", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("username", String, unique=True),               # NULL for guests
+    Column("display_name", String),
+    Column("password_hash", String),                       # scrypt$salt$hash; NULL for guests
+    Column("is_guest", Boolean, default=True),
+    Column("show_on_leaderboard", Boolean, default=False),
+    Column("created_at", DateTime),
+    Column("last_seen", DateTime),
+)
+
+user_settings = Table(
+    "user_settings", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("key", String, primary_key=True),
+    Column("value", Text),
+)
+
+watchlists = Table(
+    "watchlists", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("name", String, nullable=False),
+    Column("created_at", DateTime),
+)
+
+watchlist_items = Table(
+    "watchlist_items", metadata,
+    Column("watchlist_id", Integer, primary_key=True),
+    Column("symbol", String, primary_key=True),
+    Column("note", Text),
+    Column("added_at", DateTime),
+)
+
+alerts = Table(
+    "alerts", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("symbol", String, nullable=False),
+    Column("direction", String, nullable=False),          # above / below
+    Column("price", Float, nullable=False),
+    Column("note", String),
+    Column("active", Boolean, default=True),
+    Column("created_at", DateTime),
+    Column("triggered_at", DateTime),
+    Column("triggered_price", Float),
+)
+
+notifications = Table(
+    "notifications", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("ts", DateTime),
+    Column("kind", String),
+    Column("title", String),
+    Column("body", Text),
+    Column("link", String),
+    Column("read", Boolean, default=False),
+)
+
+recent_views = Table(
+    "recent_views", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("symbol", String, primary_key=True),
+    Column("ts", DateTime),
+)
+
+recent_searches = Table(
+    "recent_searches", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("query", String, primary_key=True),
+    Column("ts", DateTime),
+)
+
+saved_screens = Table(
+    "saved_screens", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("name", String, nullable=False),
+    Column("filters", Text),                               # JSON
+    Column("created_at", DateTime),
+)
+
+fav_industries = Table(
+    "fav_industries", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("industry", String, primary_key=True),
+)
+
+paper_accounts = Table(
+    "paper_accounts", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("cash", Float, nullable=False),
+    Column("initial", Float, nullable=False),
+    Column("started_at", DateTime),
+    Column("resets", Integer, default=0),
+)
+
+paper_trades = Table(
+    "paper_trades", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("user_id", Integer, nullable=False, index=True),
+    Column("ts", DateTime, nullable=False),
+    Column("kind", String, nullable=False),                # BUY / SELL / DIVIDEND / SPLIT
+    Column("symbol", String, nullable=False),
+    Column("qty", Float, nullable=False),
+    Column("price", Float),
+    Column("amount", Float),                               # cash impact (+ in, - out)
+    Column("cash_after", Float),
+    Column("price_time", DateTime),                        # timestamp of the quote used
+    Column("price_type", String),                          # delayed / live / sample
+    Column("note", String),
+)
+
+corporate_actions = Table(
+    "corporate_actions", metadata,
+    Column("symbol", String, primary_key=True),
+    Column("date", Date, primary_key=True),
+    Column("type", String, primary_key=True),              # dividend / split
+    Column("value", Float),                                # ₹ per share / split ratio (new shares per old)
+    Column("source", String),
+)
+
+securities = Table(
+    "securities", metadata,
+    Column("isin", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("nse_symbol", String, index=True),
+    Column("bse_symbol", String),
+    Column("series", String),
+    Column("listing_date", Date),
+    Column("avg_mcap_cr", Float),                          # AMFI 6-month average, ₹ crore
+    Column("mcap_rank", Integer),
+    Column("category", String),                            # Large Cap / Mid Cap / Small Cap (AMFI)
+    Column("source", String),
+    Column("as_of", String),
+)
+
+news_items = Table(
+    "news_items", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("feed", String, nullable=False),                # nse_announcements / nse_results / rbi / sebi / yahoo_market ...
+    Column("category", String),
+    Column("title", Text, nullable=False),
+    Column("summary", Text),
+    Column("url", Text),
+    Column("published", DateTime),
+    Column("source", String),
+    Column("symbol", String, index=True),
+    Column("fetched_at", DateTime),
+    UniqueConstraint("feed", "url", "title", name="uq_news"),
+)
+
+doc_chunks = Table(
+    "doc_chunks", metadata,
+    Column("doc_id", Integer, primary_key=True),
+    Column("chunk_no", Integer, primary_key=True),
+    Column("page", Integer),
+    Column("text", Text),
+)
+
+# columns added to pre-existing tables (lightweight migration for existing SQLite files)
+_ADDED_COLUMNS = {"holdings": [("user_id", "INTEGER")], "documents": [("user_id", "INTEGER")]}
 
 activity = Table(
     "activity", metadata,
@@ -196,24 +365,42 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+def _migrate(eng: Engine) -> None:
+    """Add columns introduced after a database file was created (SQLite and PostgreSQL)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(eng)
+    with eng.begin() as conn:
+        for table, cols in _ADDED_COLUMNS.items():
+            if not insp.has_table(table):
+                continue
+            existing = {c["name"] for c in insp.get_columns(table)}
+            for name, sqltype in cols:
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}"))
+
+
 @lru_cache(maxsize=4)
-def _engine_for(path: str) -> Engine:
-    eng = create_engine(f"sqlite:///{path}", future=True)
+def _engine_for(url: str) -> Engine:
+    if url.startswith("sqlite"):
+        eng = create_engine(url, future=True, connect_args={"check_same_thread": False, "timeout": 30})
 
-    @event.listens_for(eng, "connect")
-    def _pragmas(dbapi_conn, _):  # pragma: no cover - trivial
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA journal_mode=WAL")
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.close()
-
+        @event.listens_for(eng, "connect")
+        def _pragmas(dbapi_conn, _):  # pragma: no cover - trivial
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+    else:  # e.g. postgresql+psycopg://user:pass@host/db  (set EQUITYPILOT_DATABASE_URL)
+        eng = create_engine(url, future=True, pool_pre_ping=True)
     metadata.create_all(eng)
+    _migrate(eng)
     return eng
 
 
 def get_engine() -> Engine:
     config.ensure_dirs()
-    return _engine_for(str(config.DB_PATH))
+    url = os.environ.get("EQUITYPILOT_DATABASE_URL") or f"sqlite:///{config.DB_PATH}"
+    return _engine_for(url)
 
 
 # ---------------------------------------------------------------- generic helpers
@@ -227,11 +414,17 @@ def upsert(table: Table, rows: Iterable[dict], conflict_cols: list[str]) -> int:
     rows = [r for r in rows]
     if not rows:
         return 0
-    stmt = sqlite_insert(table)
+    eng = get_engine()
+    if eng.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as dialect_insert
+    else:
+        dialect_insert = sqlite_insert
+    stmt = dialect_insert(table)
     update_cols = {c.name: stmt.excluded[c.name] for c in table.columns
                    if c.name not in conflict_cols and c.name != "id"}
-    stmt = stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
-    with get_engine().begin() as conn:
+    stmt = (stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols) if update_cols
+            else stmt.on_conflict_do_nothing(index_elements=conflict_cols))
+    with eng.begin() as conn:
         # chunk to stay below SQLite's variable limit
         for i in range(0, len(rows), 200):
             conn.execute(stmt, rows[i:i + 200])

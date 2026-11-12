@@ -18,3 +18,7 @@ data/*
 Thumbs.db
 .vscode/
 .idea/
+
+# Frontend
+web/node_modules/
+web/dist/

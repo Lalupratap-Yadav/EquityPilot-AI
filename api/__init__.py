@@ -1,0 +1,1 @@
+"""EquityPilot AI - FastAPI backend."""

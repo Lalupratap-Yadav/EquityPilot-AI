@@ -258,12 +258,15 @@ def search_pages(pages: list[dict], query: str, window: int = 220, limit: int = 
 
 
 def save_document(symbol: str | None, filename: str, doc_type: str, period: str, source_url: str | None,
-                  extracted: dict) -> int:
-    res = db.execute(db.insert(db.documents).values(
+                  extracted: dict, user_id: int | None = None) -> int:
+    res = db.execute(db.insert(db.documents).values(user_id=user_id,
         symbol=symbol, filename=filename, doc_type=doc_type, period=period, source_url=safe_url(source_url),
         pages=extracted["n_pages"], text=pages_to_text(extracted["pages"]), uploaded_at=db.utcnow()))
     db.log_activity("Uploaded document", f"{filename} ({symbol or 'general'})")
-    return int(res.inserted_primary_key[0])
+    doc_id = int(res.inserted_primary_key[0])
+    from ..ai.rag import index_document      # build retrieval passages immediately
+    index_document(doc_id)
+    return doc_id
 
 
 def list_documents(symbol: str | None = None) -> pd.DataFrame:
@@ -280,4 +283,5 @@ def get_document(doc_id: int) -> dict | None:
 
 
 def delete_document(doc_id: int) -> None:
+    db.execute(db.delete(db.doc_chunks).where(db.doc_chunks.c.doc_id == doc_id))
     db.execute(db.delete(db.documents).where(db.documents.c.id == doc_id))

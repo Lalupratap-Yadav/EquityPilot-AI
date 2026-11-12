@@ -1,4 +1,10 @@
-# Core application
+# Core application (v2: FastAPI backend + React frontend in web/; Streamlit 'classic workbench' kept)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+itsdangerous>=2.1
+python-multipart>=0.0.9
+defusedxml>=0.7
+requests>=2.31
 streamlit>=1.50
 pandas>=2.2
 numpy>=2.0
@@ -19,3 +25,4 @@ anthropic>=0.70
 
 # Testing
 pytest>=8.0
+httpx>=0.27
