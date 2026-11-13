@@ -27,7 +27,7 @@ if px.empty or len(px) < 30:
 ind_full = T.indicator_frame(px)          # indicators on full history so long averages are warm
 ranges = {"3M": 91, "6M": 182, "1Y": 365, "3Y": 1095, "5Y": 1826, "Max": None}
 c1, c2, c3 = st.columns([2.6, 1.4, 2.6], vertical_alignment="bottom")
-rng = c1.segmented_control("Range", list(ranges), default="1Y", key=f"ta_rng") or "1Y"
+rng = c1.segmented_control("Range", list(ranges), default="1Y", key="ta_rng") or "1Y"
 style = c2.segmented_control("Chart", ["Candles", "Line"], default="Candles", key="ta_style") or "Candles"
 overlays = c3.multiselect("Overlays", ["SMA 20", "SMA 50", "SMA 200", "EMA 20", "Bollinger bands"],
                           default=["SMA 50", "SMA 200"], key="ta_ovl")
