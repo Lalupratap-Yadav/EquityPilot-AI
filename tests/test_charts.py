@@ -142,6 +142,7 @@ def test_index_tiles_use_the_shared_quote(monkeypatch):
     """Tiles take last/prev from the same quote cache as the charts; daily history only draws the sparkline."""
     monkeypatch.setattr(M.config, "OFFLINE", False)
     monkeypatch.setattr(M, "_IDX_CACHE", {"t": 0.0, "data": []})
+    monkeypatch.setattr(M, "_load_index_snapshot", lambda: [])          # no saved tiles: compute from the quote
     hist = {"^BSESN": {"dates": ["2026-11-09", "2026-11-11"], "closes": [81106.65, 81879.40]}}
     monkeypatch.setattr(M, "_index_history", lambda ttl=900: hist)
     monkeypatch.setattr(M.QUOTES, "get", lambda syms, stale_ok=False: {

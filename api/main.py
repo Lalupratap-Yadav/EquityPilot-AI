@@ -54,6 +54,11 @@ WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 async def warmer() -> None:
     """Background refresh so pages read from cache: universe quotes, feeds, securities list."""
     await asyncio.sleep(3)
+    if not config.OFFLINE:
+        try:                                       # the Market Tracker opens on NIFTY 50 / 1D: have it ready first
+            await asyncio.to_thread(routes_market._bars_cached, "^NSEI", "1D")
+        except Exception as exc:
+            log.warning("warmer (NIFTY chart): %s", exc)
     while True:
         try:
             if not config.OFFLINE:

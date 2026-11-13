@@ -100,6 +100,7 @@ _RANGE_LABEL = {"1D": "today", "1W": "1 week", "5D": "1 week", "1M": "1 month", 
 
 _BARS_CACHE: dict[tuple[str, str], tuple[float, pd.DataFrame]] = {}
 _BARS_LOCK = threading.Lock()
+_BARS_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 
 
 def _bars_cached(symbol: str, rng: str) -> pd.DataFrame:
@@ -110,12 +111,19 @@ def _bars_cached(symbol: str, rng: str) -> pd.DataFrame:
         hit = _BARS_CACHE.get(key)
         if hit and time.time() - hit[0] < ttl:
             return hit[1]
-    df = M.provider().bars(symbol, rng)
-    with _BARS_LOCK:
-        if len(_BARS_CACHE) > 500:
-            _BARS_CACHE.clear()
-        _BARS_CACHE[key] = (time.time(), df)
-    return df
+        key_lock = _BARS_KEY_LOCKS.setdefault(key, threading.Lock())
+    with key_lock:                                     # identical concurrent requests share one download
+        with _BARS_LOCK:
+            hit = _BARS_CACHE.get(key)
+            if hit and time.time() - hit[0] < ttl:
+                return hit[1]
+        df = M.provider().bars(symbol, rng)
+        with _BARS_LOCK:
+            if len(_BARS_CACHE) > 500:
+                _BARS_CACHE.clear()
+                _BARS_KEY_LOCKS.clear()
+            _BARS_CACHE[key] = (time.time(), df)
+        return df
 
 
 def _merge_quote(bars: pd.DataFrame, quote: dict | None, intraday: bool) -> pd.DataFrame:

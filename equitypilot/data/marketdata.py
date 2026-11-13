@@ -300,31 +300,61 @@ def provider() -> MarketDataProvider:
 
 # ------------------------------------------------------------------ cached quotes
 class QuoteCache:
-    """Process-wide cache so many users/widgets share one provider request per symbol per TTL."""
+    """Process-wide cache so many users/widgets share one provider request per symbol per TTL.
+
+    Per-symbol single-flight: if another request is already fetching a symbol, a symbol that has any cached value is
+    answered from the cache at once (it carries its own timestamp), and a symbol that has never been fetched waits
+    briefly for that fetch instead of starting a duplicate. Unrelated symbols never queue behind each other."""
+
+    WAIT_FOR_INFLIGHT = 10.0                       # seconds a never-seen symbol waits for someone else's fetch
 
     def __init__(self, ttl: float = 60.0):
         self.ttl, self._data, self._lock = ttl, {}, threading.Lock()
+        self._inflight: dict[str, threading.Event] = {}
+
+    def _fetch(self, need: list[str]) -> dict[str, Quote]:
+        with self._lock:
+            busy = {s: self._inflight[s] for s in need if s in self._inflight}
+            mine = [s for s in need if s not in busy]
+            never_seen = [s for s in busy if s not in self._data]
+            ev = threading.Event()
+            for s in mine:
+                self._inflight[s] = ev
+        fetched: dict[str, Quote] = {}
+        try:
+            if mine:
+                fetched = provider().quotes(mine)
+                now = time.time()
+                with self._lock:
+                    for s, q in fetched.items():
+                        self._data[s] = (now, q.dict())
+        finally:
+            with self._lock:
+                for s in mine:
+                    if self._inflight.get(s) is ev:
+                        del self._inflight[s]
+            ev.set()
+        for s in never_seen:
+            busy[s].wait(timeout=self.WAIT_FOR_INFLIGHT)
+        if fetched:
+            _persist(fetched)
+        return fetched
 
     def get(self, symbols: list[str], stale_ok: bool = False) -> dict[str, dict]:
         """stale_ok=True never blocks on the provider: returns cached (or DB) quotes and leaves refreshing
         to the background warmer. Use it for dashboards; use stale_ok=False when a fresh price matters (orders)."""
-        now = time.time()
-        with self._lock:
-            stale = [] if stale_ok else [s for s in symbols if s not in self._data or now - self._data[s][0] > self.ttl]
-        fetched = provider().quotes(stale) if stale else {}
-        with self._lock:
-            for s, q in fetched.items():
-                self._data[s] = (now, q.dict())
-        if fetched:
-            _persist(fetched)
+        if not stale_ok:
+            now = time.time()
+            with self._lock:
+                need = [s for s in symbols if s not in self._data or now - self._data[s][0] > self.ttl]
+            if need:
+                self._fetch(need)
         out = {}
+        with self._lock:
+            cached = {s: self._data[s][1] for s in symbols if s in self._data}
         for s in symbols:
-            if s in self._data:
-                out[s] = self._data[s][1]
-            else:
-                out[s] = _from_db(s)
+            out[s] = cached[s] if s in cached else _from_db(s)
         return out
-
 
     def peek(self, symbol: str) -> tuple[float, dict | None]:
         """(fetched-at epoch, quote) from memory, without touching the provider."""
@@ -336,14 +366,7 @@ class QuoteCache:
         """Fetch now, regardless of age (used by the fast refresher during market hours)."""
         if not symbols:
             return {}
-        now = time.time()
-        fetched = provider().quotes(symbols)
-        with self._lock:
-            for s, q in fetched.items():
-                self._data[s] = (now, q.dict())
-        if fetched:
-            _persist(fetched)
-        return {s: q.dict() for s, q in fetched.items()}
+        return {s: q.dict() for s, q in self._fetch(list(symbols)).items()}
 
 
 class HotSet:
@@ -499,10 +522,25 @@ def ist_date(iso_utc: str | None) -> str | None:
     return (pd.Timestamp(iso_utc) + pd.Timedelta(hours=5, minutes=30)).date().isoformat()
 
 
+_IDX_HIST_LOCK = threading.Lock()
+
+
 def _index_history(ttl: float = 900) -> dict[str, dict]:
-    """1-month daily closes per index, used only for the sparkline (cached 15 min)."""
+    """1-month daily closes per index, used only for the sparkline (cached 15 min). Single-flight: concurrent callers
+    share one download; while it runs, others get the previous data if there is any."""
     if time.time() - _IDX_HIST["t"] < ttl and _IDX_HIST["data"]:
         return _IDX_HIST["data"]
+    if not _IDX_HIST_LOCK.acquire(blocking=not _IDX_HIST["data"]):
+        return _IDX_HIST["data"]
+    try:
+        if time.time() - _IDX_HIST["t"] < ttl and _IDX_HIST["data"]:
+            return _IDX_HIST["data"]
+        return _download_index_history()
+    finally:
+        _IDX_HIST_LOCK.release()
+
+
+def _download_index_history() -> dict[str, dict]:
     import yfinance as yf
     syms = list(BROAD_INDICES) + list(SECTOR_INDICES)
     try:
@@ -533,14 +571,20 @@ def index_overview(ttl: float = 15) -> list[dict]:
     if config.OFFLINE:
         return []
     if not _IDX_CACHE["data"]:
-        # cold start (server just restarted): answer at once with the last saved tiles - real values with their own
-        # timestamps - and fetch fresh ones in the background instead of making the first visitor wait for Yahoo
+        # cold start (server just restarted): the last saved tiles - real values with their own timestamps
         saved = _load_index_snapshot()
         if saved:
-            _IDX_CACHE.update(t=time.time() - ttl + 5, data=saved)   # counts as stale again in 5 s
+            _IDX_CACHE.update(t=0.0, data=saved)
+    if _IDX_CACHE["data"]:
+        # stale-while-revalidate: answer now with what we have and refresh in the background (one refresh at a time).
+        # Tiles carry their own as-of time, so a value that is a few seconds old is still labelled correctly.
+        if not _IDX_REFRESHING.locked():
             threading.Thread(target=_refresh_index_overview, name="index-refresh", daemon=True).start()
-            return saved
-    return _compute_index_overview()
+        return _IDX_CACHE["data"]
+    with _IDX_REFRESHING:                          # nothing at all yet: one caller computes, the others wait for it
+        if _IDX_CACHE["data"]:
+            return _IDX_CACHE["data"]
+        return _compute_index_overview()
 
 
 _IDX_REFRESHING = threading.Lock()
@@ -550,6 +594,8 @@ def _refresh_index_overview() -> None:
     if not _IDX_REFRESHING.acquire(blocking=False):
         return
     try:
+        if time.time() - _IDX_CACHE["t"] < 10 and _IDX_CACHE["data"]:
+            return                                 # refreshed a moment ago by someone else
         _compute_index_overview()
     except Exception as exc:
         log.warning("index refresh failed: %s", exc)
@@ -582,6 +628,8 @@ def _save_index_snapshot(rows: list[dict]) -> None:
 
 
 def _compute_index_overview() -> list[dict]:
+    if config.OFFLINE:
+        return []
     syms = list(BROAD_INDICES) + list(SECTOR_INDICES)
     hist = _index_history()
     # read the shared cache (kept fresh by the hot refresher in session and the warmer otherwise); fetch only on a cold start

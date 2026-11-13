@@ -8,7 +8,7 @@ temporary database.
 
 | Suite | Result |
 |---|---|
-| `python -m pytest` (all backend tests, offline) | **223 passed, 0 failed** |
+| `python -m pytest` (all backend tests, offline) | **238 passed, 0 failed** (v2.5.1) |
 | New in v2.5: `tests/test_search_news.py` | 17 passed: grouped search, topics, news sections, de-duplication, breaking window, filters, saved articles, explanations, daily summary, glossary coverage, request ids |
 | `npx tsc -b` (frontend type-check) | Passed, no errors |
 | `npm run build` | Passed |
@@ -20,12 +20,15 @@ One failure appeared during the run (a test still expected version 2.4.0 after t
 
 | Check | Result |
 |---|---|
-| Full suite after hardening | **235 passed, 0 failed** |
+| Full suite after hardening | **238 passed, 0 failed** (ruff and tsc clean) |
 | `ruff` (undefined names, syntax and runtime errors) | Clean. One false alarm reviewed: the loop-variable warning in `context.py` is safe because the lambda is called immediately |
 | API sweep, fresh offline database: 71 paths × normal / missing / hostile inputs (1,505 calls) | No 5xx. Found and fixed: the chart endpoint called Yahoo in offline mode |
 | API sweep, online on a copy of the real database (1,505 calls) | No 5xx. Found and fixed: an unknown symbol returned 502 instead of 404 |
 | Browser sweep, 12 malformed URLs | No JavaScript errors; every page shows a clear message or recovery button |
 | `start.bat` | Tested: starts the server and opens the browser; detects an already-running server. The first-run install and build path has not been run on a clean machine |
+| Burst right after a restart: 15 simultaneous tile requests + 3 chart requests | Before: tiles took 105–139 s (every poll downloaded the same data). After: tiles 0.2–0.9 s; the 3 identical chart requests share one download |
+| Steady state (live, curl) | Tiles 0.24 s, sectors 0.37 s, search 0.29–0.57 s, news 1.2–1.8 s, daily summary 0.42 s, company 1.2 s, charts 0.8–1.0 s, valuation 4.2 s |
+| First chart in the first seconds after start | 15–21 s: yfinance's first connection to Yahoo (session cookie) happens then. Later charts take under 1 s |
 
 Two chart tests failed after the offline fix because they fed fake Yahoo data while the suite runs offline. They now switch
 offline mode off explicitly. One Streamlit page test timed out once while a stray background process used the CPU; it passes
@@ -59,8 +62,9 @@ on its own (17 s) and its limit was raised to 180 s.
 | `/api/news/summary` | 0.34–0.39 s | slow in the first minute (was 41 s before it switched to database counts) |
 | `/api/companies/TCS.NS` | 1.1–1.4 s | – |
 
-**Known issue:** for about a minute after the server starts, the background warm-up (quotes for about 120 companies, universe
-metrics, 18 news feeds) competes for CPU, and some pages respond slowly. Index tiles are not affected because of the snapshot.
+**After a restart (v2.5.1):** tiles, news, search and the summary answer within about 1–6 s while the warm-up runs (quotes for
+about 140 symbols, universe metrics, 18 feeds), and under 2 s afterwards. The first chart in the opening seconds can take up to
+about 20 s because of Yahoo's first-connection handshake.
 
 ## 4. Data-quality observations (not changed – shown as the source reports them)
 

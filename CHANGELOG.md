@@ -9,13 +9,18 @@
 - **The ticker cut the last index in half** at some widths; indices are now shown whole or not at all.
 - **News table growth:** NSE files about 9,000 announcements a day. Filings of untracked companies are pruned after 30 days and everything else after a year (daily, automatic). New database indexes speed up news queries.
 - **Windows consoles:** log lines with ₹ or accented names can no longer raise encoding errors.
+- **Requests piling up after a restart (index tiles took up to 139 s):** every page poll downloaded the same Yahoo data in parallel.
+  - The quote cache now shares work per symbol: a symbol with a cached value answers at once; one never fetched waits only for the same symbol's fetch.
+  - Index tiles are stale-while-revalidate: stored values come back instantly and refresh in the background.
+  - Identical chart requests share one download, and the NIFTY 1D chart is pre-loaded at start-up.
+  - Result: 15 simultaneous tile requests take under 1 s, and all page APIs answer in 0.2–1.9 s.
 
 ### Added
 - **`start.bat`:** one-click Windows start (creates the environment, installs packages, builds the web app on the first run, opens the browser, detects an already-running server).
 - A friendly page at `/` when the web app has not been built yet.
 
 ### Tests
-- 12 new robustness tests: offline never uses the network; hostile inputs never cause a server error; unknown API path → 404; prune keeps tracked and recent items.
+- 15 new robustness tests: offline never uses the network; hostile inputs never cause a server error; unknown API path → 404; prune keeps tracked and recent items; concurrent requests share one provider call; stale tiles are served without waiting; an unrelated symbol never waits behind a big download.
 - **API sweep (not in the suite):** every one of the 71 API paths was called with normal, missing and hostile inputs, 1,505 calls offline on a fresh database and 1,505 online on a copy of the real database. Result: no server errors.
 - **Browser sweep:** 12 malformed addresses (unknown company, garbage symbol, unknown tab, section, industry or preset). Result: no JavaScript errors, and each shows a helpful message.
 - The Streamlit page-test time limit was raised from 60 s to 180 s, so slow machines don't fail the suite.
