@@ -1,7 +1,7 @@
 # TODO
 
 ## Needs the owner (account access / personal details)
-- [ ] Create the GitHub repository and push (commands in docs/DEPLOYMENT.md §1).
+- [x] GitHub repository: https://github.com/Lalupratap-Yadav/EquityPilot-AI (public).
 - [ ] Deploy v2 (Docker / container host, docs/DEPLOYMENT.md §2) with a persistent volume, or the classic workbench on Streamlit Community Cloud (§3), and add the live URL to README.md.
 - [ ] Optional, paid: real-time prices. The Zerodha Kite Connect connector is built (docs/MARKET_DATA.md) and needs your own Kite Connect app (about ₹500/month; check kite.trade) plus a daily access token. It is tested only against mocked responses.
 - [ ] Add your name and LinkedIn/GitHub links to the README (an "Author" section) if you want them public.

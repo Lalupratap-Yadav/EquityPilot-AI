@@ -77,7 +77,7 @@ running, it just opens the browser.
 **Manual setup (any OS):**
 
 ```bash
-git clone <your-repo-url> EquityPilot-AI && cd EquityPilot-AI
+git clone https://github.com/Lalupratap-Yadav/EquityPilot-AI.git && cd EquityPilot-AI
 python -m venv .venv
 .venv\Scripts\activate              # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
