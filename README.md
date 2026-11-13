@@ -70,6 +70,12 @@ A **Simple / Advanced** switch in the header changes how much detail every page 
 
 **Requirements:** Python 3.11+ (developed on 3.14) and Node.js 20+ (developed on 24).
 
+**Windows, one click:** double-click **`start.bat`**. On the first run it creates the Python environment, installs the
+packages and builds the web app (a few minutes); later runs start in seconds and open the browser. If the app is already
+running, it just opens the browser.
+
+**Manual setup (any OS):**
+
 ```bash
 git clone <your-repo-url> EquityPilot-AI && cd EquityPilot-AI
 python -m venv .venv

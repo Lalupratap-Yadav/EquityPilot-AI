@@ -388,6 +388,17 @@ def _migrate(eng: Engine) -> None:
             for name, sqltype in cols:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}"))
+        # indexes added after a database was created (CREATE INDEX IF NOT EXISTS works on SQLite and PostgreSQL)
+        for name, table, cols in _ADDED_INDEXES:
+            if insp.has_table(table):
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({cols})"))
+
+
+_ADDED_INDEXES = [
+    ("ix_news_feed_published", "news_items", "feed, published"),
+    ("ix_news_published", "news_items", "published"),
+    ("ix_disclosures_date", "disclosures", "date"),
+]
 
 
 @lru_cache(maxsize=4)

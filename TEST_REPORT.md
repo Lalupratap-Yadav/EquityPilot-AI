@@ -1,4 +1,4 @@
-# EquityPilot AI – Test Report (v2.5.0, 13 Nov 2026)
+# EquityPilot AI – Test Report (v2.5.1, 13 Nov 2026)
 
 Everything below was run on 13 Nov 2026 on Windows 11 against the code in this commit. "Live data" means the running server on
 `localhost:8000` with the real Yahoo Finance, NSE, RBI, SEBI, BSE and publisher RSS feeds. Automated tests run offline on a
@@ -15,6 +15,21 @@ temporary database.
 | `npx oxlint src` | 0 errors; style warnings only (set-state-in-effect, the same pattern as existing pages) |
 
 One failure appeared during the run (a test still expected version 2.4.0 after the bump to 2.5.0). The test was updated and re-run.
+
+## 1b. Hardening pass (v2.5.1)
+
+| Check | Result |
+|---|---|
+| Full suite after hardening | **235 passed, 0 failed** |
+| `ruff` (undefined names, syntax and runtime errors) | Clean. One false alarm reviewed: the loop-variable warning in `context.py` is safe because the lambda is called immediately |
+| API sweep, fresh offline database: 71 paths × normal / missing / hostile inputs (1,505 calls) | No 5xx. Found and fixed: the chart endpoint called Yahoo in offline mode |
+| API sweep, online on a copy of the real database (1,505 calls) | No 5xx. Found and fixed: an unknown symbol returned 502 instead of 404 |
+| Browser sweep, 12 malformed URLs | No JavaScript errors; every page shows a clear message or recovery button |
+| `start.bat` | Tested: starts the server and opens the browser; detects an already-running server. The first-run install and build path has not been run on a clean machine |
+
+Two chart tests failed after the offline fix because they fed fake Yahoo data while the suite runs offline. They now switch
+offline mode off explicitly. One Streamlit page test timed out once while a stray background process used the CPU; it passes
+on its own (17 s) and its limit was raised to 180 s.
 
 ## 2. Checklist from the brief
 

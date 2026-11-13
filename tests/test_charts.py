@@ -45,6 +45,7 @@ def _daily_frame(n=10):
 
 def test_daily_bars_keep_the_exchange_date(monkeypatch):
     """Regression: daily bars were converted to UTC and shown one day early (12 Nov plotted as 11 Nov)."""
+    monkeypatch.setattr(M.config, "OFFLINE", False)          # the fake provider stands in for the network
     prov = M.YahooDelayedProvider()
     monkeypatch.setattr(prov, "_yf", lambda: _FakeYF(_daily_frame()))
     bars = prov.bars("TEST.NS", "1Y")
@@ -55,6 +56,7 @@ def test_daily_bars_keep_the_exchange_date(monkeypatch):
 def test_intraday_bars_are_utc(monkeypatch):
     idx = pd.date_range("2026-11-12 09:15", periods=4, freq="5min", tz="Asia/Kolkata", name="Datetime")
     frame = pd.DataFrame({"Open": 1.0, "High": 1.0, "Low": 1.0, "Close": [1.0, 2, 3, 4], "Volume": 5}, index=idx)
+    monkeypatch.setattr(M.config, "OFFLINE", False)
     prov = M.YahooDelayedProvider()
     monkeypatch.setattr(prov, "_yf", lambda: _FakeYF(frame))
     bars = prov.bars("TEST.NS", "1D")

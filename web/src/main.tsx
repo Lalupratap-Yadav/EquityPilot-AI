@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { ToastProvider } from './components/ui'
 import './index.css'
 
@@ -17,13 +18,17 @@ async function boot() {
     const me = await fetch('/api/me', { credentials: 'same-origin' })
     if (me.ok) queryClient.setQueryData(['me'], await me.json())
   } catch { /* offline or server down - pages show their own error states */ }
+  // the page loaded fine, so a later stale-chunk error may trigger one automatic reload again
+  window.setTimeout(() => { try { sessionStorage.removeItem('ep-chunk-reload') } catch { /* storage unavailable */ } }, 10_000)
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <ToastProvider><App /></ToastProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
+      <ErrorBoundary scope="app">
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <ToastProvider><App /></ToastProvider>
+          </BrowserRouter>
+        </QueryClientProvider>
+      </ErrorBoundary>
     </StrictMode>,
   )
 }

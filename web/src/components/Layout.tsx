@@ -8,6 +8,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { api } from '../lib/api'
 import { timeAgo } from '../lib/format'
 import { useExperience, useHotkey, useInvalidate, useMe, useTheme } from '../lib/hooks'
+import { ErrorBoundary } from './ErrorBoundary'
 import { SearchPalette } from './SearchPalette'
 import { LiveTicker, MarketClock, MobileTabBar } from './live'
 import { cx, Segmented } from './ui'
@@ -203,7 +204,7 @@ export default function Layout() {
           </div>
           <LiveTicker />
         </header>
-        <main key={loc.pathname} className="page-enter mx-auto max-w-[1400px] px-4 pb-24 pt-5 sm:px-6 lg:pb-8"><Breadcrumbs /><Outlet /></main>
+        <main key={loc.pathname} className="page-enter mx-auto max-w-[1400px] px-4 pb-24 pt-5 sm:px-6 lg:pb-8"><Breadcrumbs /><ErrorBoundary key={loc.pathname}><Outlet /></ErrorBoundary></main>
       </div>
       <MobileTabBar />
       <SearchPalette open={palette} onClose={() => setPalette(false)} />

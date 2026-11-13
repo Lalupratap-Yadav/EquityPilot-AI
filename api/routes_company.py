@@ -50,7 +50,7 @@ def track(symbol: str, request: Request):
         raise HTTPException(503, "Offline mode - cannot fetch new companies.")
     ok, msg, sym = repo.add_company(sym)
     if not ok:
-        raise HTTPException(502, msg)
+        raise HTTPException(404 if msg.startswith("No data returned") else 502, msg)
     M.refresh_actions(sym)
     from .routes_explore import invalidate_metrics
     invalidate_metrics()

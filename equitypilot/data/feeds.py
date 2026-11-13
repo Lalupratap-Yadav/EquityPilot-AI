@@ -226,12 +226,40 @@ def refresh_market_news(force: bool = False) -> tuple[bool, str]:
     return True, f"{len(rows)} items"
 
 
+RETENTION_DAYS = {"filings_untracked": 30, "default": 365}
+
+
+def prune_news(force: bool = False) -> int:
+    """Keep the news table bounded. NSE alone files about 9,000 announcements a day: filings of companies EquityPilot
+    does not track are kept for 30 days, everything else for a year. Runs at most once a day."""
+    if not force and _recent("news_pruned", timedelta(hours=23)):
+        return 0
+    from sqlalchemy import and_, or_
+    n = db.news_items.c
+    now = db.utcnow()
+    tracked = db.read_df(db.select(db.companies.c.symbol))["symbol"].tolist()
+    old_filing = and_(n.feed.in_(["nse_announcements", "nse_results", "bse_notices"]),
+                      or_(n.symbol.is_(None), n.symbol.notin_(tracked) if tracked else n.symbol.isnot(None)),
+                      n.published < now - timedelta(days=RETENTION_DAYS["filings_untracked"]))
+    very_old = n.published < now - timedelta(days=RETENTION_DAYS["default"])
+    with db.get_engine().begin() as conn:
+        removed = conn.execute(db.news_items.delete().where(or_(old_filing, very_old))).rowcount or 0
+    db.set_setting("news_pruned", now.isoformat())
+    if removed:
+        log.info("pruned %d old news items", removed)
+    return removed
+
+
 def refresh_all(force: bool = False) -> dict[str, str]:
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=6) as ex:          # feeds are independent; fetch them in parallel
         res = dict(zip(FEEDS, ex.map(lambda k: refresh_feed(k, force)[1], list(FEEDS))))
     out = dict(res)
     out["yahoo_market"] = refresh_market_news(force)[1]
+    try:
+        prune_news()
+    except Exception as exc:                       # housekeeping must never break a refresh
+        log.warning("news prune failed: %s", exc)
     return out
 
 

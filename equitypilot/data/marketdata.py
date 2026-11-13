@@ -152,6 +152,8 @@ class YahooDelayedProvider(MarketDataProvider):
     def bars(self, symbol: str, rng: str) -> pd.DataFrame:
         """OHLCV bars. Intraday bars carry a naive UTC timestamp; daily/weekly bars carry the
         exchange (IST) calendar date - converting a daily bar to UTC would move it to the previous day."""
+        if config.OFFLINE:
+            return pd.DataFrame()                      # offline: callers fall back to stored daily history
         period, interval = RANGES.get(rng, RANGES["1Y"])
         h = self._yf().Ticker(symbol).history(period=period, interval=interval, auto_adjust=False, timeout=20)
         if h is None or h.empty:
@@ -170,6 +172,8 @@ class YahooDelayedProvider(MarketDataProvider):
         return out
 
     def actions(self, symbol: str) -> list[dict]:
+        if config.OFFLINE:
+            return []
         acts = self._yf().Ticker(symbol).actions
         out = []
         if acts is None or acts.empty:

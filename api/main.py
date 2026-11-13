@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -36,6 +37,12 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(out, ensure_ascii=False)
 
 
+# Windows consoles default to a legacy code page; never let a ₹ or a company name with accents crash a log call
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except (AttributeError, ValueError):
+        pass
 _handler = logging.StreamHandler()
 _handler.setFormatter(JsonFormatter() if os.environ.get("EQUITYPILOT_LOG_JSON") == "1"
                       else logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
@@ -91,7 +98,7 @@ async def lifespan(app: FastAPI):
         t.cancel()
 
 
-app = FastAPI(title="EquityPilot AI API", version="2.5.0", lifespan=lifespan,
+app = FastAPI(title="EquityPilot AI API", version="2.5.1", lifespan=lifespan,
               description="Indian equity research platform API. Educational use; not investment advice.")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SessionMiddleware, secret_key=secret_key(), session_cookie="ep_session", max_age=60 * 60 * 24 * 365,
@@ -194,7 +201,16 @@ if WEB_DIST.exists():
 
     @app.get("/{path:path}", include_in_schema=False)
     def spa(path: str):
+        if path == "api" or path.startswith("api/"):
+            return JSONResponse({"detail": "Not found."}, status_code=404)
         target = WEB_DIST / path
         if path and target.is_file() and WEB_DIST in target.resolve().parents:
             return FileResponse(target)
         return FileResponse(WEB_DIST / "index.html", headers={"cache-control": "no-cache"})
+else:
+    @app.get("/", include_in_schema=False)
+    def frontend_missing():
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse("<h2>EquityPilot API is running, but the web app has not been built yet.</h2>"
+                            "<p>Run <code>cd web</code>, <code>npm install</code>, <code>npm run build</code>, then restart the server "
+                            "(or simply run <code>start.bat</code>). The API documentation is at <a href='/docs'>/docs</a>.</p>")

@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.5.1] – 13 Nov 2026 – Hardening
+### Fixed
+- **No crash screen:** a rendering error anywhere used to blank the whole site. Error boundaries now contain it to the page (or widget), with Reload / Try again / Home. After an update, an open tab that requests old page code reloads itself once.
+- **Unknown `/api/...` addresses** returned the web page with status 200; they are now JSON 404s.
+- **Offline mode still called Yahoo** from the chart endpoint; offline now never touches the network.
+- **Unknown company symbols** returned 502 ("upstream error") when added; now 404 with the provider's message.
+- **The ticker cut the last index in half** at some widths; indices are now shown whole or not at all.
+- **News table growth:** NSE files about 9,000 announcements a day. Filings of untracked companies are pruned after 30 days and everything else after a year (daily, automatic). New database indexes speed up news queries.
+- **Windows consoles:** log lines with ₹ or accented names can no longer raise encoding errors.
+
+### Added
+- **`start.bat`:** one-click Windows start (creates the environment, installs packages, builds the web app on the first run, opens the browser, detects an already-running server).
+- A friendly page at `/` when the web app has not been built yet.
+
+### Tests
+- 12 new robustness tests: offline never uses the network; hostile inputs never cause a server error; unknown API path → 404; prune keeps tracked and recent items.
+- **API sweep (not in the suite):** every one of the 71 API paths was called with normal, missing and hostile inputs, 1,505 calls offline on a fresh database and 1,505 online on a copy of the real database. Result: no server errors.
+- **Browser sweep:** 12 malformed addresses (unknown company, garbage symbol, unknown tab, section, industry or preset). Result: no JavaScript errors, and each shows a helpful message.
+- The Streamlit page-test time limit was raised from 60 s to 180 s, so slow machines don't fail the suite.
+
 ## [2.5.0] – 13 Nov 2026 – Premium UI, intelligent search, trusted news
 ### Added
 - **Global search (Ctrl+K or /):** one box for companies, indices, sectors, financial concepts, research tools and news. Results are grouped and ranked by match strength.

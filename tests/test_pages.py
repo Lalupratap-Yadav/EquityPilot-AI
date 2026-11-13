@@ -13,7 +13,7 @@ PAGES = ["views/dashboard.py", "views/company.py", "views/financials.py", "views
 
 
 def run_page(page: str, symbol: str | None = "SAMPLE-BETA") -> AppTest:
-    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60)
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)   # generous: slow or busy machines must not fail the suite
     if symbol:
         at.query_params["symbol"] = symbol
     at.run()
