@@ -1,27 +1,27 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  Bell, BookOpen, Bot, Briefcase, Building2, Calculator, Compass, FileText, Filter, GitCompare, HelpCircle, Home, LineChart,
-  Menu, Moon, Newspaper, PiggyBank, Search, Settings, Star, Sun, Telescope, UploadCloud, X,
+  Bell, BookOpen, Bot, Briefcase, Building2, Calculator, ChevronRight, Compass, FileText, Filter, GitCompare, HelpCircle, Home, LineChart,
+  Menu, Moon, Newspaper, PanelLeftClose, PanelLeftOpen, PiggyBank, Search, Settings, Star, Sun, Telescope, UploadCloud, X,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { api } from '../lib/api'
 import { timeAgo } from '../lib/format'
-import { useHotkey, useInvalidate, useMe, useTheme } from '../lib/hooks'
-import { SearchPalette } from './common'
+import { useExperience, useHotkey, useInvalidate, useMe, useTheme } from '../lib/hooks'
+import { SearchPalette } from './SearchPalette'
 import { LiveTicker, MarketClock, MobileTabBar } from './live'
-import { cx } from './ui'
+import { cx, Segmented } from './ui'
 
 const NAV: { section: string; items: { to: string; label: string; icon: ReactNode }[] }[] = [
-  { section: 'Discover', items: [
-    { to: '/', label: 'Home', icon: <Home /> }, { to: '/explore', label: 'Explore', icon: <Compass /> },
-    { to: '/industries', label: 'Industries', icon: <Building2 /> }, { to: '/markets', label: 'Market Tracker', icon: <LineChart /> },
+  { section: 'Markets', items: [
+    { to: '/', label: 'Home', icon: <Home /> }, { to: '/markets', label: 'Market Tracker', icon: <LineChart /> },
+    { to: '/news', label: 'News', icon: <Newspaper /> }, { to: '/explore', label: 'Explore', icon: <Compass /> },
+    { to: '/industries', label: 'Industries', icon: <Building2 /> },
   ] },
   { section: 'Research', items: [
-    { to: '/research', label: 'Equity Research', icon: <Telescope /> }, { to: '/valuation', label: 'Valuation Lab', icon: <Calculator /> },
-    { to: '/screener', label: 'Screener', icon: <Filter /> }, { to: '/compare', label: 'Compare', icon: <GitCompare /> },
-    { to: '/news', label: 'News & Intelligence', icon: <Newspaper /> }, { to: '/assistant', label: 'AI Assistant', icon: <Bot /> },
-    { to: '/reports', label: 'Reports', icon: <FileText /> },
+    { to: '/research', label: 'Equity Research', icon: <Telescope /> }, { to: '/screener', label: 'Screener', icon: <Filter /> },
+    { to: '/compare', label: 'Compare', icon: <GitCompare /> }, { to: '/valuation', label: 'Valuation Lab', icon: <Calculator /> },
+    { to: '/assistant', label: 'AI Assistant', icon: <Bot /> }, { to: '/reports', label: 'Reports', icon: <FileText /> },
   ] },
   { section: 'My space', items: [
     { to: '/watchlists', label: 'Watchlists', icon: <Star /> }, { to: '/portfolio', label: 'Portfolio', icon: <Briefcase /> },
@@ -33,42 +33,92 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
   ] },
 ]
 
-function Logo() {
+function Logo({ mini }: { mini?: boolean }) {
   return (
-    <Link to="/" className="flex items-center gap-2.5 px-2" aria-label="EquityPilot AI home">
+    <Link to="/" className={cx('flex items-center gap-2.5', mini ? 'justify-center' : 'px-2')} aria-label="EquityPilot AI home">
       <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden><rect width="64" height="64" rx="16" fill="#3F5BF6" />
         <path d="M14 44 L28 30 L36 37 L50 20" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M42 19 L51 19 L51 28" fill="none" stroke="#FDBA4D" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-      <div className="leading-tight">
+      {!mini && <div className="leading-tight">
         <div className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-white">EquityPilot <span className="text-brand-600 dark:text-brand-300">AI</span></div>
-        <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Research smarter</div>
-      </div>
+        <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Indian equity research</div>
+      </div>}
     </Link>
   )
 }
 
-function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+function Sidebar({ onNavigate, mini = false, onToggle }: { onNavigate?: () => void; mini?: boolean; onToggle?: () => void }) {
   return (
-    <nav className="flex h-full flex-col gap-5 overflow-y-auto px-3 py-4" aria-label="Main">
-      <Logo />
+    <nav className={cx('flex h-full flex-col overflow-y-auto py-4', mini ? 'gap-3 px-2' : 'gap-4 px-3')} aria-label="Main">
+      <Logo mini={mini} />
       {NAV.map((g) => (
         <div key={g.section}>
-          <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{g.section}</div>
+          {mini ? <div className="mx-2 mb-2 border-t border-slate-200 dark:border-ink-700" />
+            : <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">{g.section}</div>}
           <ul className="space-y-0.5">
             {g.items.map((it) => (
               <li key={it.to}>
-                <NavLink to={it.to} end={it.to === '/'} onClick={onNavigate}
-                  className={({ isActive }) => cx('flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium transition-colors [&>svg]:h-[18px] [&>svg]:w-[18px]',
-                    isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-ink-800 dark:hover:text-white')}>
-                  {it.icon}{it.label}
+                <NavLink to={it.to} end={it.to === '/'} onClick={onNavigate} title={mini ? it.label : undefined} aria-label={mini ? it.label : undefined}
+                  className={({ isActive }) => cx('flex items-center rounded-lg text-[13px] font-medium transition-colors [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0',
+                    mini ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-[7px]',
+                    isActive ? 'bg-ink-900 text-white dark:bg-brand-600' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-ink-800 dark:hover:text-white')}>
+                  {it.icon}{!mini && it.label}
                 </NavLink>
               </li>
             ))}
           </ul>
         </div>
       ))}
-      <p className="mt-auto px-3 text-[10px] leading-relaxed text-slate-400">Educational research platform. Not investment advice. Prices are delayed unless marked LIVE.</p>
+      <div className="mt-auto space-y-2">
+        {onToggle && (
+          <button onClick={onToggle} className={cx('flex w-full items-center gap-2 rounded-lg text-xs font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-ink-800', mini ? 'justify-center p-2.5' : 'px-3 py-2')}
+            aria-label={mini ? 'Expand sidebar' : 'Collapse sidebar'} title={mini ? 'Expand sidebar' : 'Collapse sidebar'}>
+            {mini ? <PanelLeftOpen className="h-4 w-4" /> : <><PanelLeftClose className="h-4 w-4" />Collapse</>}
+          </button>
+        )}
+        {!mini && <p className="px-3 text-[10px] leading-relaxed text-slate-400">Educational research platform. Not investment advice. Prices are delayed unless marked LIVE.</p>}
+      </div>
     </nav>
+  )
+}
+
+// ------------------------------------------------------------------ breadcrumbs (derived from the URL)
+const SECTION_LABEL: Record<string, [string, string]> = {
+  explore: ['Explore', '/explore'], industries: ['Industries', '/industries'], markets: ['Market Tracker', '/markets'], company: ['Companies', '/explore'],
+  research: ['Equity Research', '/research'], valuation: ['Valuation Lab', '/valuation'], screener: ['Screener', '/screener'], compare: ['Compare', '/compare'],
+  news: ['News', '/news'], assistant: ['AI Assistant', '/assistant'], reports: ['Reports', '/reports'], watchlists: ['Watchlists', '/watchlists'],
+  portfolio: ['Portfolio', '/portfolio'], invest: ['Virtual Invest', '/invest'], documents: ['Documents', '/documents'], learn: ['Learning Centre', '/learn'],
+  guide: ['How to Use', '/guide'], settings: ['Settings', '/settings'],
+}
+
+function Breadcrumbs() {
+  const loc = useLocation()
+  const parts = loc.pathname.split('/').filter(Boolean)
+  if (!parts.length || !SECTION_LABEL[parts[0]]) return null
+  const crumbs: [string, string | null][] = [['Home', '/'], [SECTION_LABEL[parts[0]][0], parts.length > 1 ? SECTION_LABEL[parts[0]][1] : null]]
+  if (parts[1]) {
+    const raw = decodeURIComponent(parts[1])
+    crumbs.push([parts[0] === 'industries' ? raw.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase()) : raw.replace(/\.(NS|BO)$/, ''), null])
+  }
+  return (
+    <nav aria-label="Breadcrumb" className="mb-3 flex min-w-0 items-center gap-1 text-xs muted">
+      {crumbs.map(([label, to], i) => (
+        <span key={i} className="flex min-w-0 items-center gap-1">
+          {i > 0 && <ChevronRight className="h-3 w-3 shrink-0 opacity-60" />}
+          {to ? <Link to={to} className="truncate hover:text-slate-800 hover:underline dark:hover:text-slate-200">{label}</Link>
+            : <span className="truncate font-medium text-slate-700 dark:text-slate-200" aria-current="page">{label}</span>}
+        </span>
+      ))}
+    </nav>
+  )
+}
+
+function ExperienceSwitch() {
+  const [exp, setExp] = useExperience()
+  return (
+    <span title="Simple: the essentials with plain-English explanations. Advanced: full statements, historical ratios, valuation models and technical indicators.">
+      <Segmented size="xs" value={exp} onChange={setExp} options={[{ id: 'simple', label: 'Simple' }, { id: 'advanced', label: 'Advanced' }]} />
+    </span>
   )
 }
 
@@ -102,6 +152,8 @@ function Notifications() {
 }
 
 export default function Layout() {
+  const [mini, setMini] = useState(() => { try { return localStorage.getItem('ep-sidebar') === 'mini' } catch { return false } })
+  const toggleMini = () => setMini((m) => { try { localStorage.setItem('ep-sidebar', m ? 'full' : 'mini') } catch { /* storage unavailable */ } return !m })
   const [drawer, setDrawer] = useState(false)
   const [palette, setPalette] = useState(false)
   const [theme, setTheme] = useTheme()
@@ -113,17 +165,20 @@ export default function Layout() {
   const user = me.data?.user
   return (
     <div className="min-h-screen">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 border-r border-slate-200 bg-white lg:block dark:border-ink-700 dark:bg-ink-900"><Sidebar /></aside>
+      <aside className={cx('fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200 bg-white transition-[width] duration-200 lg:block dark:border-ink-700 dark:bg-ink-900', mini ? 'w-[68px]' : 'w-56')}>
+        <Sidebar mini={mini} onToggle={toggleMini} />
+      </aside>
       {drawer && (
         <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setDrawer(false)}>
           <div className="absolute inset-0 bg-ink-950/50" />
           <aside className="absolute inset-y-0 left-0 w-64 bg-white dark:bg-ink-900" onClick={(e) => e.stopPropagation()}>
             <button className="btn-ghost absolute right-2 top-3 p-2" onClick={() => setDrawer(false)} aria-label="Close menu"><X className="h-5 w-5" /></button>
             <Sidebar onNavigate={() => setDrawer(false)} />
+            <div className="absolute bottom-16 left-4"><ExperienceSwitch /></div>
           </aside>
         </div>
       )}
-      <div className="lg:pl-60">
+      <div className={cx('transition-[padding] duration-200', mini ? 'lg:pl-[68px]' : 'lg:pl-56')}>
         <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-ink-700 dark:bg-ink-950/80">
           <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-2 px-4 sm:px-6">
             <button className="btn-ghost p-2 lg:hidden" onClick={() => setDrawer(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></button>
@@ -132,6 +187,7 @@ export default function Layout() {
               <kbd className="hidden rounded-md border border-slate-200 px-1.5 text-[10px] font-semibold sm:inline dark:border-ink-600">Ctrl K</kbd>
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-1">
+              <span className="mr-1 hidden lg:inline-flex"><ExperienceSwitch /></span>
               <span className="hidden sm:inline-flex md:hidden"><MarketClock compact /></span><span className="hidden md:inline-flex"><MarketClock /></span>
               <button className="btn-ghost p-2" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Toggle theme">
                 {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
@@ -147,7 +203,7 @@ export default function Layout() {
           </div>
           <LiveTicker />
         </header>
-        <main key={loc.pathname} className="page-enter mx-auto max-w-[1400px] px-4 pb-24 pt-6 sm:px-6 lg:pb-8"><Outlet /></main>
+        <main key={loc.pathname} className="page-enter mx-auto max-w-[1400px] px-4 pb-24 pt-5 sm:px-6 lg:pb-8"><Breadcrumbs /><Outlet /></main>
       </div>
       <MobileTabBar />
       <SearchPalette open={palette} onClose={() => setPalette(false)} />

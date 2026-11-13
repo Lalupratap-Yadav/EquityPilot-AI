@@ -322,8 +322,26 @@ def report(symbol: str, body: ReportBody, request: Request):
 @router.get("/learn")
 def learn(request: Request):
     uid = current_user(request)
-    return clean({"modules": MODULES, "progress": users.get_pref(uid, "learning_progress", {}),
-                  "glossary": [{"term": k, **v} for k, v in GLOSSARY.items()]})
+    return clean({"modules": MODULES, "progress": users.get_pref(uid, "learning_progress", {}), "glossary": glossary_terms()})
+
+
+def glossary_terms() -> list[dict]:
+    """Glossary terms plus the plain-English metric guide entries that the glossary does not already cover,
+    so every concept that search can find has an explanation page."""
+    from equitypilot.content import metrics_guide as MG
+    out = [{"term": k, **v} for k, v in GLOSSARY.items()]
+    have = {k.lower() for k in GLOSSARY} | {a.lower() for v in GLOSSARY.values() for a in v.get("aliases", [])}
+    for key, g in MG.GUIDE.items():
+        name = key.replace("_", " ")
+        if name in have:
+            continue
+        nice = name[0].upper() + name[1:]
+        for a, b in (("Roe", "ROE"), ("Roce", "ROCE"), ("Ebitda", "EBITDA"), ("ebitda", "EBITDA"), ("Cfo", "CFO"), ("cfo", "CFO"), ("Fcf", "FCF")):
+            nice = nice.replace(a, b)
+        out.append({"term": nice, "aliases": [name], "definition": g.get("what", ""),
+                    "interpretation": " ".join(x for x in (g.get("why"), g.get("read")) if x),
+                    **({"formula": "Example: " + g["example"]} if g.get("example") else {})})
+    return out
 
 
 @router.get("/learn/metrics")

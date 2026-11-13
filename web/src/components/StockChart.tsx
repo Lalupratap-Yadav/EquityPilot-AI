@@ -324,17 +324,20 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
   const money = !isIndex
   const fmt = (v: number | null | undefined) => (isNum(v) ? `${money ? '₹' : ''}${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—')
 
+  // The big number is ALWAYS the latest value (the same number as the ticker and tiles). The point under the cursor
+  // is shown in the small floating tag, so the header never disagrees with the rest of the page.
   const head = useMemo(() => {
     if (!d?.bars.length) return null
     const base = d.baseline?.value ?? d.bars[0].close
-    const value = hover?.close ?? d.bars[d.bars.length - 1].close
+    const value = d.bars[d.bars.length - 1].close
     const abs = value - base
     return { value, abs, pct: base ? abs / base : null, base }
-  }, [d, hover])
+  }, [d])
+  const hoverChg = hover && head?.base ? (hover.close - head.base) / head.base : null
   const todayIST = new Date(Date.now() + 19800_000).toISOString().slice(0, 10)
-  const caption = hover ? fullTime(hover.time)
-    : range === '1D' && d?.session_date && d.session_date !== todayIST ? `Last trading session · ${fullTime(d.session_date as Time)}`
-      : range === '1D' ? 'Today' : RANGE_TEXT[range]
+  const asOf = d?.quote?.time ? new Date(d.quote.time + 'Z').toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST' : null
+  const caption = (range === '1D' && d?.session_date && d.session_date !== todayIST ? `Last session (${fullTime(d.session_date as Time)})`
+    : range === '1D' ? 'Today' : RANGE_TEXT[range]) + (asOf ? ` · as of ${asOf}` : '')
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v])
   const up = (head?.abs ?? 0) >= 0
   const loadingFirst = q.isLoading && !d
@@ -396,6 +399,7 @@ export function StockChart({ symbol, isIndex = false, compact = false, defaultRa
         {effMode === 'simple' && hover && tagLeft != null && (
           <div className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 whitespace-nowrap text-xs" style={{ left: tagLeft }}>
             <span className="num font-semibold text-slate-800 dark:text-slate-100">{fmt(hover.close)}</span>
+            {hoverChg != null && <span className={cx('num ml-1 font-medium', hoverChg >= 0 ? 'text-up' : 'text-down')}>{pct(hoverChg, 2, true)}</span>}
             <span className="mx-1 text-slate-300 dark:text-ink-600">|</span>
             <span className="text-slate-500 dark:text-slate-400">{shortTime(hover.time, range)}</span>
           </div>

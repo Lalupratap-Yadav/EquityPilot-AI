@@ -197,7 +197,7 @@ def fetch_news(symbol: str) -> list[dict]:
                 pub_dt = pd.Timestamp(pub).tz_convert(None).to_pydatetime() if pub else None
         publisher = (c.get("provider") or {}).get("displayName") or c.get("publisher")
         out.append({"symbol": symbol, "date": pub_dt, "title": title, "category": "News",
-                    "publisher": publisher, "url": url,
+                    "publisher": publisher, "url": url, "summary": (c.get("summary") or "")[:600] or None,
                     "source": f"{config.YAHOO_SOURCE} news aggregator", "data_type": "third_party",
                     "fetched_at": now})
     return out

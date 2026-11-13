@@ -52,7 +52,7 @@ export default function Learn() {
               </button>)
           })}
         </div>
-      ) : <Glossary terms={glossary} />}
+      ) : <Glossary terms={glossary} initial={params.get('term') ?? ''} />}
     </div>
   )
 }
@@ -111,8 +111,8 @@ function ModuleView({ mod, progress, onBack }: { mod: Module; progress?: Progres
   )
 }
 
-function Glossary({ terms }: { terms: Term[] }) {
-  const [q, setQ] = useState('')
+function Glossary({ terms, initial = '' }: { terms: Term[]; initial?: string }) {
+  const [q, setQ] = useState(initial)
   const list = useMemo(() => {
     const s = q.trim().toLowerCase()
     const sorted = [...terms].sort((a, b) => a.term.localeCompare(b.term))

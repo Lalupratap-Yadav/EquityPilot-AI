@@ -7,9 +7,10 @@ import { ExplainLabel } from '../components/Explain'
 import { Card, ChangePill, cx, DataBadge, EmptyState, ErrorState, Loading, Modal, Notice, SourceNote, Stat, Tabs, useToast } from '../components/ui'
 import { api, ApiError, type Quote } from '../lib/api'
 import { baseSymbol, crore, inr, isNum, ist, mult, num, pct } from '../lib/format'
-import { useInvalidate, useQuoteStream } from '../lib/hooks'
+import { useExperience, useInvalidate, useQuoteStream } from '../lib/hooks'
+import { CompanyNews, DocumentsTab, ValuationTab } from './company/Extra'
 import FinancialsTab from './company/Financials'
-import { BankTab, ChartTab, NewsTab, NotesTab, OwnershipTab, PeersTab, QuarterlyTab, RiskTab, TechnicalsTab } from './company/Sections'
+import { BankTab, ChartTab, NotesTab, OwnershipTab, PeersTab, QuarterlyTab, RiskTab, TechnicalsTab } from './company/Sections'
 
 export interface CompanyResponse {
   company: { symbol: string; name: string; exchange: string; isin: string | null; sector: string | null; industry: string | null; description: string | null
@@ -26,7 +27,7 @@ export interface CompanyResponse {
   notes: Record<string, string>
 }
 
-type TabId = 'overview' | 'chart' | 'financials' | 'quarterly' | 'technicals' | 'risk' | 'peers' | 'ownership' | 'bank' | 'news' | 'notes'
+type TabId = 'overview' | 'chart' | 'financials' | 'valuation' | 'quarterly' | 'technicals' | 'risk' | 'peers' | 'ownership' | 'bank' | 'news' | 'documents' | 'notes'
 
 function Insights({ m, isFin }: { m: CompanyResponse['metrics']; isFin: boolean }) {
   const items: { text: string; tone: 'up' | 'down' | 'neutral' }[] = []
@@ -52,7 +53,8 @@ function Insights({ m, isFin }: { m: CompanyResponse['metrics']; isFin: boolean 
 export default function Company() {
   const { symbol = '' } = useParams()
   const [params, setParams] = useSearchParams()
-  const tab = (params.get('tab') as TabId) || 'overview'
+  const [exp] = useExperience()
+  const tabParam = (params.get('tab') as TabId) || 'overview'
   const setTab = (t: TabId) => setParams((p) => { p.set('tab', t); return p }, { replace: true })
   const [trade, setTrade] = useState(false)
   const toast = useToast()
@@ -72,14 +74,21 @@ export default function Company() {
     onError: (e) => toast((e as Error).message, 'error'),
   })
 
+  // Simple: the essentials. Advanced adds quarterly detail, technicals, bank metrics and research notes.
   const tabs = useMemo(() => {
+    const adv = exp === 'advanced'
     const t: { id: TabId; label: string }[] = [
-      { id: 'overview', label: 'Overview' }, { id: 'chart', label: 'Chart' }, { id: 'financials', label: 'Financials' },
-      { id: 'quarterly', label: 'Quarterly' }, { id: 'technicals', label: 'Technicals' }, { id: 'risk', label: 'Risk' },
-      { id: 'peers', label: 'Peers' }, { id: 'ownership', label: 'Ownership' }, { id: 'news', label: 'News' }, { id: 'notes', label: 'My notes' }]
-    if (q.data?.is_financial) t.splice(3, 0, { id: 'bank', label: 'Bank metrics' })
+      { id: 'overview', label: 'Overview' }, { id: 'chart', label: 'Price & performance' }, { id: 'financials', label: adv ? 'Financials & ratios' : 'Financials' },
+      ...(adv ? [{ id: 'quarterly' as TabId, label: 'Quarterly' }] : []),
+      ...(adv && q.data?.is_financial ? [{ id: 'bank' as TabId, label: 'Bank metrics' }] : []),
+      { id: 'valuation', label: 'Valuation' }, { id: 'ownership', label: 'Shareholding' }, { id: 'peers', label: 'Competitors' },
+      { id: 'news', label: 'News' }, { id: 'risk', label: 'Risks' },
+      ...(adv ? [{ id: 'technicals' as TabId, label: 'Technicals' }] : []),
+      { id: 'documents', label: 'Documents' }, ...(adv ? [{ id: 'notes' as TabId, label: 'My notes' }] : [])]
     return t
-  }, [q.data?.is_financial])
+  }, [q.data?.is_financial, exp])
+  // a tab hidden by switching to Simple falls back to the overview; the company and URL stay the same
+  const tab: TabId = tabs.some((t) => t.id === tabParam) ? tabParam : 'overview'
 
   if (q.isLoading) return <Loading label="Loading company…" />
   if (q.error instanceof ApiError && q.error.status === 404) {
@@ -136,6 +145,13 @@ export default function Company() {
       </section>
 
       <Tabs tabs={tabs} value={tab} onChange={setTab} />
+      {!c.is_sample && (
+        <p className="-mt-2 text-[11px] muted">
+          Data: price {quote?.status === 'live' ? 'live' : 'delayed'} ({quote?.time ? `${ist(quote.time)} IST` : 'time n/a'}) · financial statements from {c.source.split(' (')[0]} (third-party; verify with filings)
+          {' · '}{d.statement_basis && d.statement_basis !== 'unspecified' ? `${d.statement_basis} basis` : 'consolidated/standalone basis not stated by the provider'} · {d.statement_currency === 'INR' ? '₹ crore' : d.statement_currency}
+          {m.latest_fy ? ` · latest fiscal year ending ${ist(String(m.latest_fy), false)}` : ''}
+        </p>
+      )}
 
       {tab === 'overview' && (
         <div className="grid gap-5 xl:grid-cols-3">
@@ -180,7 +196,7 @@ export default function Company() {
                 </ul>
               </Card>
             )}
-            <NewsTab symbol={symbol} compact />
+            <CompanyNews symbol={symbol} compact />
           </div>
         </div>
       )}
@@ -192,7 +208,9 @@ export default function Company() {
       {tab === 'risk' && <RiskTab symbol={symbol} />}
       {tab === 'peers' && <PeersTab symbol={symbol} />}
       {tab === 'ownership' && <OwnershipTab symbol={symbol} sample={c.is_sample} />}
-      {tab === 'news' && <NewsTab symbol={symbol} />}
+      {tab === 'news' && <CompanyNews symbol={symbol} />}
+      {tab === 'valuation' && <ValuationTab symbol={symbol} />}
+      {tab === 'documents' && <DocumentsTab symbol={symbol} links={d.official_links} sample={c.is_sample} />}
       {tab === 'notes' && <NotesTab symbol={symbol} initial={d.notes} />}
 
       <Modal open={trade} onClose={() => setTrade(false)} title="Virtual Invest · paper trade">

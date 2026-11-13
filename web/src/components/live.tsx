@@ -81,13 +81,15 @@ export function MarketClock({ compact = false }: { compact?: boolean }) {
   )
 }
 
-function TickerItem({ i }: { i: IndexRow }) {
+const SHOW_FROM = ['', '', 'hidden sm:flex', 'hidden md:flex', 'hidden xl:flex', 'hidden 2xl:flex']
+
+function TickerItem({ i, k }: { i: IndexRow; k: number }) {
   const flash = useFlash(i.last)
   const vix = i.symbol === '^INDIAVIX'
   const up = (i.change_pct ?? 0) >= 0
   return (
     <Link to={`/markets?symbol=${encodeURIComponent(i.symbol)}`}
-      className="flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-1 text-xs transition-colors hover:bg-slate-100 dark:hover:bg-ink-800">
+      className={cx('shrink-0 items-center gap-2 rounded-lg px-2.5 py-1 text-xs transition-colors hover:bg-slate-100 dark:hover:bg-ink-800', SHOW_FROM[k] || 'flex')}>
       <span className="font-semibold text-slate-700 dark:text-slate-200">{i.name}</span>
       <span className={cx('num rounded px-0.5 font-medium text-slate-900 dark:text-white', flash)}>{num(i.last, 2)}</span>
       {isNum(i.change_pct) && (
@@ -105,12 +107,13 @@ export function LiveTicker() {
   const broad = (ov.data?.indices ?? []).filter((i) => i.kind === 'broad')
   return (
     <div className="border-t border-slate-200/70 dark:border-ink-800">
-      <div className="no-scrollbar mx-auto flex h-9 max-w-[1400px] items-center gap-1 overflow-x-auto px-2 sm:px-4">
-        {broad.length === 0 && Array.from({ length: 4 }).map((_, k) => <span key={k} className="skeleton h-4 w-40 shrink-0" />)}
-        {broad.map((i) => <TickerItem key={i.symbol} i={i} />)}
-        <span className="ml-auto hidden shrink-0 pl-2 text-[10px] uppercase tracking-wider muted xl:inline">
-          {ov.data?.status.realtime ? 'Live' : 'Delayed'} · {ov.data?.status.phase === 'open' ? 'auto-updating' : 'last close'}
-        </span>
+      <div className="mx-auto flex h-9 max-w-[1400px] items-center gap-1 overflow-hidden px-2 sm:px-4">
+        {broad.length === 0 && Array.from({ length: 3 }).map((_, k) => <span key={k} className={cx('skeleton h-4 w-36 shrink-0', k > 1 && 'hidden sm:block')} />)}
+        {broad.slice(0, 6).map((i, k) => <TickerItem key={i.symbol} i={i} k={k} />)}
+        <Link to="/markets" className="ml-auto hidden shrink-0 pl-2 text-[10px] uppercase tracking-wider muted hover:text-brand-600 lg:inline"
+          title={ov.data?.indices[0]?.time ? `Last value at ${new Date(ov.data.indices[0].time + 'Z').toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} IST` : undefined}>
+          {ov.data?.status.realtime ? 'Live' : 'Delayed'} · {ov.data?.status.phase === 'open' ? 'auto-updating' : 'last close'}{ov.data?.indices[0]?.as_of ? ` · ${ov.data.indices[0].as_of}` : ''}
+        </Link>
       </div>
     </div>
   )

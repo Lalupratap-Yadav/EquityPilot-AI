@@ -1,5 +1,34 @@
 # Changelog
 
+## [2.5.0] – 13 Nov 2026 – Premium UI, intelligent search, trusted news
+### Added
+- **Global search (Ctrl+K or /):** one box for companies, indices, sectors, financial concepts, research tools and news. Results are grouped and ranked by match strength.
+  - Typo tolerant ("Adani Enterprwses"), with aliases (SBI, L&T, HUL, Zomato).
+  - Company preview: price, change, market cap, P/E and industry.
+  - Recent searches and recently viewed companies; full keyboard navigation; an "Ask AI" fallback.
+  - Database-backed, no AI involved; 65–100 ms inside the server.
+- **News & Market Intelligence rebuilt:**
+  - 13 sections: top, breaking (under 3 h only), Indian market, company, announcements, results, banking, economy & RBI, SEBI, sector, global, commodities & currency, IPO & corporate actions.
+  - New sources: BSE notices, plus publisher RSS feeds from The Economic Times, Mint and Business Standard. Headline, short description and link only; switch off with `EQUITYPILOT_MEDIA_RSS=0`.
+  - De-duplication: the earliest copy is kept and the other publishers are listed.
+  - Filters by company, sector, source and date, sorted by latest or relevance; saved articles; related news.
+  - A fact-only daily market summary.
+  - "What this means" explanations that separate confirmed filings from media reports and flag tentative headlines.
+- **Company page:** Valuation tab (multiples against the company's own history, implied prices, peer multiples) and Documents tab (your PDFs plus official filing links). Sections renamed to match investor language. A data-provenance line shows price time, source, statement basis, unit and latest fiscal year.
+- **Simple / Advanced switch** in the header, for the whole app; switching keeps the page and company you are on.
+- **Layout:** collapsible, regrouped sidebar; breadcrumbs; a compact Home hero; a ticker that never scrolls sideways.
+- **Server:** request id (`X-Request-ID`) and timing logs for every API call, slow-request warnings and optional JSON logs (`EQUITYPILOT_LOG_JSON=1`). Feeds refresh in parallel and never block a page view.
+- The glossary now includes every metric-guide concept, so every concept search result has an explanation page.
+
+### Fixed
+- **NIFTY header vs ticker:** the chart's big number showed the hovered point, so it could differ from the ticker. It now always shows the latest value with an "as of" time; the hovered point appears in the small tag with its own change.
+- **Top news flooded by filings from small untracked companies:** it now ranks results, deals and dividends of tracked companies, mixed with market news and RBI/SEBI releases.
+- **Older media and SEBI items vanished from news:** about 9,000 daily NSE filings crowded them out of the query window. Filings now load separately.
+- **"&" deleted and "nbsp;" left in RSS headlines:** entities are now decoded properly.
+- **Index tiles took 32 s after a restart:** the last tiles are now saved and served immediately while fresh data loads.
+- **Daily summary took 41 s cold:** it now uses database counts.
+- Change pills and data badges no longer wrap next to long company names.
+
 ## [2.4.1] – 13 Nov 2026 – Smarter company recognition, typo-tolerant search, Groww-style chart
 ### Fixed
 - **AI did not recognise companies** such as "Compare Adani and Tata Power" and showed the help text. A new resolver understands:

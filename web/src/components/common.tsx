@@ -1,10 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Bell, Building2, CornerDownLeft, Plus, Search, Star } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { api, ApiError, type CompanyCardData, type Quote, type SearchResult } from '../lib/api'
+import { ArrowDown, ArrowUp, Bell, Plus, Star } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { api, ApiError, type CompanyCardData, type Quote } from '../lib/api'
 import { baseSymbol, crore, inr, isNum, mult, pct } from '../lib/format'
-import { useDebounced, useInvalidate } from '../lib/hooks'
+import { useInvalidate } from '../lib/hooks'
 import { ChangePill, cx, DataBadge, Modal, useToast } from './ui'
 
 // ------------------------------------------------------------------ company visuals
@@ -131,64 +131,6 @@ export function DataTable<T extends object>({ rows, columns, rowKey, onRowClick,
         </tbody>
       </table>
     </div>
-  )
-}
-
-// ------------------------------------------------------------------ global search palette (Ctrl+K)
-export function SearchPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [q, setQ] = useState('')
-  const [idx, setIdx] = useState(0)
-  const dq = useDebounced(q, 180)
-  const nav = useNavigate()
-  const inputRef = useRef<HTMLInputElement>(null)
-  const res = useQuery({
-    queryKey: ['search', dq], enabled: dq.trim().length >= 1,
-    queryFn: () => api.get<{ results: SearchResult[]; industries: { id: string; name: string }[] }>(`/search?q=${encodeURIComponent(dq)}`),
-  })
-  const recent = useQuery({ queryKey: ['recent'], queryFn: () => api.get<{ views: { symbol: string; name: string }[]; searches: string[] }>('/recent'), enabled: open })
-  useEffect(() => { if (open) { setQ(''); setIdx(0); window.setTimeout(() => inputRef.current?.focus(), 30) } }, [open])
-  const items: { label: string; sub: string; to: string; icon: ReactNode; badge?: ReactNode }[] = q.trim()
-    ? [...(res.data?.industries ?? []).map((i) => ({ label: i.name, sub: 'Industry intelligence', to: `/industries/${i.id}`, icon: <Building2 className="h-4 w-4" /> })),
-      ...(res.data?.results ?? []).map((r) => ({
-        label: r.name, sub: `${baseSymbol(r.symbol)}${r.category ? ' · ' + r.category : ''}${r.industry ? ' · ' + r.industry : ''}`,
-        to: `/company/${encodeURIComponent(r.symbol)}`, icon: <CompanyAvatar symbol={r.symbol} size="sm" />,
-        badge: r.is_sample ? <DataBadge type="sample" /> : !r.tracked ? <span className="text-[10px] muted">fetch on open</span> : null }))]
-    : (recent.data?.views ?? []).map((v) => ({ label: v.name, sub: `${baseSymbol(v.symbol)} · recently viewed`, to: `/company/${encodeURIComponent(v.symbol)}`,
-      icon: <CompanyAvatar symbol={v.symbol} size="sm" /> }))
-  const go = (to: string) => { onClose(); nav(to) }
-  return (
-    <Modal open={open} onClose={onClose} title="Search companies, symbols and industries" wide>
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-        <input ref={inputRef} className="input pl-9 text-base" placeholder="e.g. Tata, HDFCBANK, INE002A01018, banking" value={q}
-          onChange={(e) => { setQ(e.target.value); setIdx(0) }}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(items.length - 1, i + 1)) }
-            if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(0, i - 1)) }
-            if (e.key === 'Enter' && items[idx]) go(items[idx].to)
-          }} />
-      </div>
-      {!q.trim() && (recent.data?.searches?.length ?? 0) > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">{recent.data!.searches.map((s) => <button key={s} className="chip" onClick={() => setQ(s)}>{s}</button>)}</div>
-      )}
-      <ul className="mt-3 max-h-[50vh] overflow-y-auto">
-        {items.map((it, i) => (
-          <li key={it.to + i}>
-            <button onClick={() => go(it.to)} onMouseEnter={() => setIdx(i)}
-              className={cx('flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left', i === idx ? 'bg-brand-50 dark:bg-ink-700' : '')}>
-              {it.icon}
-              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{it.label}</span><span className="block truncate text-xs muted">{it.sub}</span></span>
-              {it.badge}{i === idx && <CornerDownLeft className="h-3.5 w-3.5 text-slate-400" />}
-            </button>
-          </li>
-        ))}
-        {(() => { const dym = (res.data?.results ?? []).find((r) => r.did_you_mean)?.did_you_mean
-          return dym && q.trim() ? <li className="order-first px-3 pb-1 text-xs muted">Showing results for <b className="text-slate-700 dark:text-slate-200">{dym}</b></li> : null })()}
-        {q.trim() && res.isFetched && items.length === 0 && <li className="px-3 py-6 text-center text-sm muted">No matches. Try a company name, NSE symbol or ISIN.</li>}
-        {!q.trim() && items.length === 0 && <li className="px-3 py-4 text-sm muted">Search 5,500+ NSE/BSE-listed companies by name, symbol or ISIN.</li>}
-      </ul>
-      <p className="mt-3 text-[11px] muted">↑↓ to move · Enter to open · Esc to close · Ctrl+K anywhere</p>
-    </Modal>
   )
 }
 

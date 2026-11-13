@@ -1,5 +1,18 @@
 # EquityPilot AI – Project Status
 
+## v2.5 PREMIUM UI, SEARCH, NEWS – complete (13 Nov 2026)
+| Item | State |
+|---|---|
+| Grouped, typo-tolerant global search with company preview | ✅ 17 brief examples verified live; unit tests |
+| News: 13 sections, publisher RSS, de-duplication, filters, saved, related, daily summary, explanations | ✅ unit tests + live check of every section |
+| Company page: Valuation and Documents tabs, investor-language sections, provenance line, Simple/Advanced | ✅ screenshots |
+| Layout: collapsible sidebar, breadcrumbs, compact hero, non-scrolling ticker | ✅ 1440 / 820 / 390 px screenshots |
+| Header vs ticker consistency (NIFTY) | ✅ live: identical values and "as of" time |
+| Request logging, slow-request warnings, cold-start snapshot | ✅ measured (see TEST_REPORT.md) |
+| Regression tour, 23 routes | ✅ no console errors, overflow or NaN text |
+
+Tests: **223 passing**. Full details: [TEST_REPORT.md](TEST_REPORT.md).
+
 ## v2.4 LIVE LAYER, RESEARCH AGENT, PREMIUM UI – complete (13 Nov 2026)
 | Item | State |
 |---|---|

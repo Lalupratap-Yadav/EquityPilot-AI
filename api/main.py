@@ -20,11 +20,26 @@ from starlette.middleware.sessions import SessionMiddleware
 from equitypilot import config, db
 from equitypilot.data import feeds, marketdata, sample, securities
 
-from . import routes_company, routes_explore, routes_invest, routes_market, routes_research, routes_user
+from . import routes_company, routes_explore, routes_invest, routes_market, routes_news, routes_research, routes_search, routes_user
 from .core import secret_key
 
-logging.basicConfig(level=os.environ.get("EQUITYPILOT_LOG_LEVEL", "INFO"),
-                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+class JsonFormatter(logging.Formatter):
+    """One JSON object per line (EQUITYPILOT_LOG_JSON=1) - easy to search and ship to a log service."""
+    def format(self, record: logging.LogRecord) -> str:
+        import json
+        out = {"ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"), "level": record.levelname, "logger": record.name, "msg": record.getMessage()}
+        for k in ("request_id", "method", "path", "status", "ms"):
+            if hasattr(record, k):
+                out[k] = getattr(record, k)
+        if record.exc_info:
+            out["exc"] = self.formatException(record.exc_info)
+        return json.dumps(out, ensure_ascii=False)
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(JsonFormatter() if os.environ.get("EQUITYPILOT_LOG_JSON") == "1"
+                      else logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+logging.basicConfig(level=os.environ.get("EQUITYPILOT_LOG_LEVEL", "INFO"), handlers=[_handler])
 log = logging.getLogger("equitypilot.api")
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
@@ -76,7 +91,7 @@ async def lifespan(app: FastAPI):
         t.cancel()
 
 
-app = FastAPI(title="EquityPilot AI API", version="2.4.0", lifespan=lifespan,
+app = FastAPI(title="EquityPilot AI API", version="2.5.0", lifespan=lifespan,
               description="Indian equity research platform API. Educational use; not investment advice.")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SessionMiddleware, secret_key=secret_key(), session_cookie="ep_session", max_age=60 * 60 * 24 * 365,
@@ -106,6 +121,45 @@ class SecurityHeaders:
 
 app.add_middleware(SecurityHeaders)
 
+SLOW_MS = float(os.environ.get("EQUITYPILOT_SLOW_MS", "2000"))
+access_log = logging.getLogger("equitypilot.access")
+
+
+class RequestLog:
+    """Request id + timing for every API call (pure ASGI). Slow requests are logged as warnings; the id is returned
+    in the X-Request-ID header so a user-reported error can be found in the logs."""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+            return await self.app(scope, receive, send)
+        import time
+        import uuid
+        rid = uuid.uuid4().hex[:12]
+        t0 = time.perf_counter()
+        status = {"code": 0}
+
+        async def send_wrapped(message):
+            if message["type"] == "http.response.start":
+                status["code"] = message["status"]
+                message["headers"] = list(message.get("headers", [])) + [(b"x-request-id", rid.encode())]
+            await send(message)
+        try:
+            await self.app(scope, receive, send_wrapped)
+        finally:
+            ms = round((time.perf_counter() - t0) * 1000, 1)
+            extra = {"request_id": rid, "method": scope.get("method"), "path": scope["path"], "status": status["code"], "ms": ms}
+            if status["code"] >= 500:
+                access_log.error("%s %s -> %s in %s ms [%s]", scope.get("method"), scope["path"], status["code"], ms, rid, extra=extra)
+            elif ms > SLOW_MS and not scope["path"].startswith(("/api/assistant/stream", "/api/ws/")):
+                access_log.warning("slow request %s %s -> %s in %s ms [%s]", scope.get("method"), scope["path"], status["code"], ms, rid, extra=extra)
+            else:
+                access_log.debug("%s %s -> %s in %s ms [%s]", scope.get("method"), scope["path"], status["code"], ms, rid, extra=extra)
+
+
+app.add_middleware(RequestLog)
+
 
 @app.exception_handler(Exception)
 async def unhandled(request: Request, exc: Exception):
@@ -113,7 +167,7 @@ async def unhandled(request: Request, exc: Exception):
     return JSONResponse({"detail": "Something went wrong on the server. The error has been logged."}, status_code=500)
 
 
-for r in (routes_market, routes_company, routes_explore, routes_user, routes_invest, routes_research):
+for r in (routes_search, routes_news, routes_market, routes_company, routes_explore, routes_user, routes_invest, routes_research):
     app.include_router(r.router)
 
 

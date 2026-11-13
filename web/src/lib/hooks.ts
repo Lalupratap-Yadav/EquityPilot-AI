@@ -22,6 +22,27 @@ export function useTheme(): [Theme, (t: Theme) => void] {
   return [theme, setTheme]
 }
 
+// ------------------------------------------------------------------ experience: simple (beginners) or advanced (analysts)
+export type Experience = 'simple' | 'advanced'
+
+/** App-wide Simple / Advanced switch. Stored per browser; every page reads the same value, so switching never
+ *  loses the company or page you are on. */
+export function useExperience(): [Experience, (e: Experience) => void] {
+  const read = (): Experience => { try { return (localStorage.getItem('ep-experience') as Experience) || 'simple' } catch { return 'simple' } }
+  const [exp, setExp] = useState<Experience>(read)
+  const set = useCallback((e: Experience) => {
+    try { localStorage.setItem('ep-experience', e) } catch { /* private mode */ }
+    setExp(e)
+    window.dispatchEvent(new CustomEvent('ep-experience', { detail: e }))
+  }, [])
+  useEffect(() => {
+    const h = (e: Event) => setExp((e as CustomEvent<Experience>).detail)
+    window.addEventListener('ep-experience', h)
+    return () => window.removeEventListener('ep-experience', h)
+  }, [])
+  return [exp, set]
+}
+
 // ------------------------------------------------------------------ live-style quote stream (WebSocket)
 type StreamState = { quotes: Record<string, Quote>; market?: MarketStatus; connected: boolean; updatedAt?: number }
 

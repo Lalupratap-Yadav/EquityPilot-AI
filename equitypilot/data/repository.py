@@ -291,7 +291,7 @@ def refresh_news(symbol: str) -> tuple[bool, str]:
         return False, str(exc)
     if not rows:
         return True, "The provider returned no recent headlines."
-    db.upsert(db.disclosures, rows, ["symbol", "title", "url"])
+    db.upsert(db.disclosures, [{k: v for k, v in r.items() if k != "summary"} for r in rows], ["symbol", "title", "url"])
     return True, f"{len(rows)} headlines fetched."
 
 

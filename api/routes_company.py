@@ -37,16 +37,6 @@ def _company_or_404(symbol: str) -> dict:
 
 
 # ------------------------------------------------------------------ search
-@router.get("/search")
-def search(q: str, request: Request, limit: int = 12):
-    uid = current_user(request)
-    res = S.search(q[:60], limit)
-    if len(q.strip()) >= 2 and res:
-        db.upsert(db.recent_searches, [{"user_id": uid, "query": q.strip()[:60], "ts": db.utcnow()}], ["user_id", "query"])
-    return clean({"results": res, "industries": [{"id": i["id"], "name": i["name"]} for i in BY_ID.values()
-                                                 if q.lower() in i["name"].lower()]})
-
-
 @router.post("/companies/{symbol}/track")
 def track(symbol: str, request: Request):
     """Fetch an untracked company from the data provider (profile, quote, statements, prices)."""

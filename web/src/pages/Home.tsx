@@ -27,15 +27,15 @@ function AskBox() {
   const [q, setQ] = useState('')
   const go = (text: string) => { if (text.trim()) nav(`/assistant?q=${encodeURIComponent(text.trim())}`) }
   return (
-    <div className="mt-5 max-w-2xl">
-      <form onSubmit={(e) => { e.preventDefault(); go(q) }} className="flex items-center gap-2 rounded-2xl bg-white/10 p-1.5 ring-1 ring-white/15 backdrop-blur focus-within:ring-white/40">
+    <div className="min-w-0">
+      <form onSubmit={(e) => { e.preventDefault(); go(q) }} className="flex items-center gap-2 rounded-xl bg-white/10 p-1.5 ring-1 ring-white/15 focus-within:ring-white/40">
         <Sparkles className="ml-2 h-4 w-4 shrink-0 text-saffron-400" />
         <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={1000} aria-label="Ask the AI research assistant"
           placeholder="Ask anything - a company, a comparison, the market…" className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-white placeholder:text-slate-300 focus:outline-none" />
         <button className="btn shrink-0 bg-white text-ink-900 hover:bg-brand-50" disabled={!q.trim()}>Ask AI</button>
       </form>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {ASK_EXAMPLES.map((x) => <button key={x} onClick={() => go(x)} className="rounded-full bg-white/10 px-2.5 py-1 text-xs text-slate-200 transition-colors hover:bg-white/20">{x}</button>)}
+        {ASK_EXAMPLES.slice(0, 3).map((x) => <button key={x} onClick={() => go(x)} className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-slate-200 transition-colors hover:bg-white/20">{x}</button>)}
       </div>
     </div>
   )
@@ -66,27 +66,28 @@ export default function Home() {
   return (
     <div className="space-y-6">
       {/* ---------------------------------------------- System 1 summary */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 p-5 text-white sm:p-7">
-        <div className="relative z-10 max-w-3xl">
-          <div className="flex flex-wrap items-center gap-2 text-sm text-brand-200">
-            <span>{greeting()}{me.data?.user && !me.data.user.is_guest ? `, ${me.data.user.display_name}` : ''}</span>
-            <span className="rounded-full bg-white/90 dark:bg-white/90"><MarketClock /></span>
+      <section className="rounded-2xl bg-ink-900 p-4 text-white sm:p-5 dark:bg-ink-850 dark:ring-1 dark:ring-ink-700">
+        <div className="grid items-center gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+              <span>{greeting()}{me.data?.user && !me.data.user.is_guest ? `, ${me.data.user.display_name}` : ''}</span>
+              <span className="rounded-full bg-white/90"><MarketClock /></span>
+            </div>
+            {nifty && b ? (
+              <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
+                NIFTY 50 is <b className={nifty.change_pct >= 0 ? 'text-emerald-300' : 'text-rose-300'}>{nifty.change_pct >= 0 ? 'up' : 'down'} {pct(Math.abs(nifty.change_pct), 2)}</b> at <b className="num text-white">{num(nifty.last, 2)}</b>
+                {ov.data?.status.open ? ' (delayed)' : ` (close, ${nifty.as_of})`}. Of {mv.data?.universe} tracked companies, <b className="text-white">{b.advances}</b> rose and <b className="text-white">{b.declines}</b> fell
+                {best && worst ? <>; <b className="text-white">{best.name}</b> led ({pct(best.avg_change, 2, true)}), <b className="text-white">{worst.name}</b> lagged ({pct(worst.avg_change, 2, true)})</> : null}.
+              </p>
+            ) : <div className="mt-2 space-y-2"><Skeleton className="h-4 w-full bg-white/10" /><Skeleton className="h-4 w-2/3 bg-white/10" /></div>}
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+              <Link to="/markets" className="text-slate-300 hover:text-white hover:underline">Market Tracker <ArrowRight className="inline h-3 w-3" /></Link>
+              <Link to="/news" className="text-slate-300 hover:text-white hover:underline">Today's news <ArrowRight className="inline h-3 w-3" /></Link>
+              <Link to="/invest" className="text-slate-300 hover:text-white hover:underline"><PiggyBank className="mr-0.5 inline h-3 w-3" />Practise with ₹10 lakh virtual money</Link>
+            </div>
           </div>
-          <h1 className="mt-1 text-2xl font-semibold !text-white sm:text-3xl">What's happening in Indian markets</h1>
-          {nifty && b ? (
-            <p className="mt-3 text-[15px] leading-relaxed text-slate-200">
-              NIFTY 50 is <b className={nifty.change_pct >= 0 ? 'text-emerald-300' : 'text-rose-300'}>{nifty.change_pct >= 0 ? 'up' : 'down'} {pct(Math.abs(nifty.change_pct), 2)}</b> at {num(nifty.last, 2)}
-              {ov.data?.status.open ? ' (delayed)' : ` (last close, ${nifty.as_of})`}. Among the {mv.data?.universe} companies EquityPilot tracks, <b>{b.advances}</b> rose and <b>{b.declines}</b> fell
-              {best && worst ? <>; <b>{best.name}</b> led ({pct(best.avg_change, 2, true)}) while <b>{worst.name}</b> lagged ({pct(worst.avg_change, 2, true)})</> : null}.
-            </p>
-          ) : <div className="mt-3 space-y-2"><Skeleton className="h-4 w-full bg-white/10" /><Skeleton className="h-4 w-2/3 bg-white/10" /></div>}
           <AskBox />
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link to="/explore" className="btn bg-white/10 text-white hover:bg-white/20">Explore companies <ArrowRight className="h-4 w-4" /></Link>
-            <Link to="/invest" className="btn bg-white/10 text-white hover:bg-white/20"><PiggyBank className="h-4 w-4" />Practise with ₹10 lakh virtual money</Link>
-          </div>
         </div>
-        <svg className="absolute -right-10 -top-10 h-72 w-72 opacity-20" viewBox="0 0 200 200" aria-hidden><path d="M10 160 L70 100 L105 125 L190 30" fill="none" stroke="#FDBA4D" strokeWidth="10" strokeLinecap="round" /></svg>
       </section>
 
       {/* ---------------------------------------------- indices */}

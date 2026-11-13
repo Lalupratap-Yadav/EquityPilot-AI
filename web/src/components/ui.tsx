@@ -58,7 +58,7 @@ const STATUS: Record<string, [string, string, string]> = {
 export function DataBadge({ type, className }: { type?: string | null; className?: string }) {
   if (!type) return null
   const [label, cls, tip] = STATUS[type] ?? [type.toUpperCase(), 'bg-slate-500/10 text-slate-600', '']
-  return <span title={tip} className={cx('inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide', cls, className)}>{label}</span>
+  return <span title={tip} className={cx('inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-1.5 py-0.5 text-[10px] font-semibold tracking-wide', cls, className)}>{label}</span>
 }
 
 const TIERS: Record<string, { label: string; title: string; cls: string }> = {
@@ -80,7 +80,7 @@ export function ChangePill({ value, className, size = 'sm' }: { value: number | 
   if (!isNum(value)) return <span className={cx('muted', className)}>—</span>
   const up = value > 0, flat = value === 0
   return (
-    <span className={cx('num inline-flex items-center rounded-md font-semibold', size === 'md' ? 'px-2 py-0.5 text-sm' : 'px-1.5 py-0.5 text-xs',
+    <span className={cx('num inline-flex shrink-0 items-center whitespace-nowrap rounded-md font-semibold', size === 'md' ? 'px-2 py-0.5 text-sm' : 'px-1.5 py-0.5 text-xs',
       flat ? 'bg-slate-500/10 text-slate-500' : up ? 'bg-up/10 text-up' : 'bg-down/10 text-down', className)}>
       {up ? '▲' : flat ? '' : '▼'} {pct(Math.abs(value), 2)}
     </span>

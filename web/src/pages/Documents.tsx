@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Bot, ExternalLink, FileText, Search, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { CompanyPicker } from '../components/CompanyPicker'
 import { Card, DataBadge, EmptyState, Loading, Modal, Notice, PageHeader, useToast } from '../components/ui'
 import { api } from '../lib/api'
@@ -15,7 +15,8 @@ interface UploadResp { id: number; pages: number; tables: number; scanned: boole
 const DOC_TYPES = ['Annual Report', 'Quarterly Results', 'Investor Presentation', 'Earnings Call Transcript', 'Credit Rating Report', 'Shareholding Pattern', 'Other filing']
 
 export default function Documents() {
-  const [symbol, setSymbol] = useState('')
+  const [params] = useSearchParams()
+  const [symbol, setSymbol] = useState(params.get('symbol') ?? '')
   const [docType, setDocType] = useState(DOC_TYPES[0])
   const [period, setPeriod] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')

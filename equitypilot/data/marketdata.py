@@ -528,6 +528,56 @@ def index_overview(ttl: float = 15) -> list[dict]:
         return _IDX_CACHE["data"]
     if config.OFFLINE:
         return []
+    if not _IDX_CACHE["data"]:
+        # cold start (server just restarted): answer at once with the last saved tiles - real values with their own
+        # timestamps - and fetch fresh ones in the background instead of making the first visitor wait for Yahoo
+        saved = _load_index_snapshot()
+        if saved:
+            _IDX_CACHE.update(t=time.time() - ttl + 5, data=saved)   # counts as stale again in 5 s
+            threading.Thread(target=_refresh_index_overview, name="index-refresh", daemon=True).start()
+            return saved
+    return _compute_index_overview()
+
+
+_IDX_REFRESHING = threading.Lock()
+
+
+def _refresh_index_overview() -> None:
+    if not _IDX_REFRESHING.acquire(blocking=False):
+        return
+    try:
+        _compute_index_overview()
+    except Exception as exc:
+        log.warning("index refresh failed: %s", exc)
+    finally:
+        _IDX_REFRESHING.release()
+
+
+def _snapshot_path():
+    return config.DATA_DIR / "cache" / "index_overview.json"
+
+
+def _load_index_snapshot() -> list[dict]:
+    import json
+    try:
+        return json.loads(_snapshot_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _save_index_snapshot(rows: list[dict]) -> None:
+    import json
+    try:
+        path = _snapshot_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(rows, default=str), encoding="utf-8")
+        tmp.replace(path)
+    except OSError as exc:
+        log.warning("could not save index snapshot: %s", exc)
+
+
+def _compute_index_overview() -> list[dict]:
     syms = list(BROAD_INDICES) + list(SECTOR_INDICES)
     hist = _index_history()
     # read the shared cache (kept fresh by the hot refresher in session and the warmer otherwise); fetch only on a cold start
@@ -558,4 +608,5 @@ def index_overview(ttl: float = 15) -> list[dict]:
                     "source": "Yahoo Finance (via yfinance)"})
     if out:
         _IDX_CACHE.update(t=time.time(), data=out)
+        _save_index_snapshot(out)
     return out

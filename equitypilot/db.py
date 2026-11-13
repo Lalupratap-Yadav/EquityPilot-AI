@@ -256,6 +256,17 @@ recent_searches = Table(
     Column("ts", DateTime),
 )
 
+saved_news = Table(
+    "saved_news", metadata,
+    Column("user_id", Integer, primary_key=True),
+    Column("url", String, primary_key=True),
+    Column("title", Text, nullable=False),
+    Column("source", String),
+    Column("published", DateTime),
+    Column("symbol", String),
+    Column("saved_at", DateTime),
+)
+
 saved_screens = Table(
     "saved_screens", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),

@@ -24,7 +24,14 @@ It applies equity-research practice from the NISM Series XV (Research Analyst) c
 | **My space** | **Watchlists**: several lists, with notes and price alerts that raise notifications.<br>**Portfolio**: value, XIRR, allocation, risk and correlation.<br>**Virtual Invest**: practice orders, P&L, allocation, performance vs NIFTY 50, achievements, an opt-in leaderboard and reset. |
 | **Learn** | **Learning Centre**: 8 modules with quizzes and saved progress, plus a glossary.<br>**How to Use** guide.<br>**Settings**: account, theme, AI engine and costs, data sources, and export of your data. |
 
-Search for any of the **5,552 listed securities** from anywhere with `Ctrl+K` (or `/`). Opening a company that isn't tracked yet fetches its data on demand.
+**Global search** (`Ctrl+K` or `/`) finds companies (5,552 listed securities), indices, sectors, financial concepts, research tools and news in one box. It is typo tolerant ("Adani Enterprwses"), knows everyday names (SBI, L&T, HUL), previews price and market cap, and keeps recent searches. Opening a company that isn't tracked yet fetches its data on demand.
+
+**News & Market Intelligence** has 13 sections, from Top and Breaking (under 3 hours old only) to Commodities & currency and IPOs.
+- **Sources:** official NSE, BSE, RBI and SEBI feeds first, then established publishers (The Economic Times, Mint, Business Standard and Reuters via Yahoo), each labelled.
+- **Tools:** stories are de-duplicated across publishers; filters by company, sector, source and date; saved articles and related news.
+- **Summary and explanations:** a fact-only daily market summary, and "What this means" explanations that separate confirmed filings from media reports.
+
+A **Simple / Advanced** switch in the header changes how much detail every page shows, without losing your place.
 
 | Company | Valuation Lab | Virtual Invest |
 |---|---|---|
@@ -99,6 +106,8 @@ docker run -p 8000:8000 -v equitypilot-data:/app/data equitypilot
 | `EQUITYPILOT_DATA_DIR`, `EQUITYPILOT_DB` | Location of data and the SQLite database |
 | `EQUITYPILOT_DATABASE_URL` | Use PostgreSQL instead of SQLite. The code path exists but hasn't been tested against a live server |
 | `EQUITYPILOT_NO_WARMER=1` | Disable the background refresh tasks |
+| `EQUITYPILOT_MEDIA_RSS=0` | Turn off the publisher RSS feeds (Economic Times, Mint, Business Standard); official feeds stay on |
+| `EQUITYPILOT_LOG_JSON=1`, `EQUITYPILOT_SLOW_MS` | JSON log lines; threshold for slow-request warnings (default 2000 ms). Every API response carries `X-Request-ID` |
 | `EQUITYPILOT_HOT_INTERVAL` | Seconds between in-session refreshes of indices and on-screen symbols (default 20) |
 | `EQUITYPILOT_MARKET_PROVIDER=kite` + `KITE_API_KEY` + `KITE_ACCESS_TOKEN` | Paid and optional. Real-time quotes from your own Zerodha Kite Connect app. See [docs/MARKET_DATA.md](docs/MARKET_DATA.md) |
 | `ANTHROPIC_API_KEY` + `EQUITYPILOT_SHARED_AI_KEY=1` | Paid and optional. Lets **all** users of the server use your Claude key. Without the opt-in flag, each user enters their own key in Settings |
@@ -178,6 +187,8 @@ See [docs/AUDIT.md](docs/AUDIT.md) for why FastAPI + React was chosen and why Re
 ## Known limitations
 
 - **Prices** are delayed (about 15 minutes) or end-of-day by default. In session they auto-update every 20 seconds, but they aren't real-time. Real-time quotes need the optional, paid Zerodha Kite Connect connector, which has been tested only against mocked responses (see [docs/MARKET_DATA.md](docs/MARKET_DATA.md)).
+- **First minute after a restart:** some pages respond slowly while the background warm-up runs; index tiles are served from a saved snapshot meanwhile.
+- **Publisher headlines** come from the publishers' own RSS feeds (headline, short description, link) for personal, non-commercial research; full articles are read on the publisher's site.
 - **Statements** from Yahoo cover 4–5 years and don't state whether they're consolidated or standalone. Shareholding and bank metrics have to be entered from filings.
 - **PDFs** must contain text. Scanned PDFs are detected, but OCR isn't included.
 - **Alerts** are checked against the latest delayed price while the server is running. There are no push or SMS notifications.
