@@ -1,4 +1,4 @@
-@import '@fontsource-variable/inter';
+@import '@fontsource-variable/inter/opsz.css';
 @import 'tailwindcss';
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -28,41 +28,61 @@
   --color-ink-600: #2c3a5a;
   --radius-xl: 0.9rem;
   --radius-2xl: 1.15rem;
-  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --color-canvas: #f4f6fa;
+  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 14px -6px rgb(16 24 40 / 0.07);
+  --shadow-lift: 0 2px 4px rgb(16 24 40 / 0.04), 0 14px 28px -10px rgb(16 24 40 / 0.16);
   --shadow-pop: 0 12px 32px -8px rgb(16 24 40 / 0.25);
+  --shadow-btn: 0 1px 2px rgb(16 24 40 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.18);
 }
 
 @layer base {
-  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
-  body { @apply bg-slate-50 text-slate-800 dark:bg-ink-950 dark:text-slate-200; font-feature-settings: 'cv11', 'ss01'; }
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-optical-sizing: auto;
+    scrollbar-color: rgb(148 163 184 / 0.5) transparent; }
+  body { @apply bg-canvas text-slate-800 dark:bg-ink-950 dark:text-slate-200; font-feature-settings: 'cv11', 'ss01'; }
   ::selection { @apply bg-brand-200 text-brand-900; }
   :focus-visible { @apply outline-2 outline-offset-2 outline-brand-500; }
   .num { font-variant-numeric: tabular-nums; }
   /* grid/flex children may shrink below their content width (prevents horizontal page scroll on phones) */
   .grid > *, .card { min-width: 0; }
-  h1, h2, h3 { @apply text-slate-900 dark:text-white tracking-tight; }
+  h1, h2, h3 { @apply text-slate-900 dark:text-white; letter-spacing: -0.015em; }
+  h1 { letter-spacing: -0.028em; }
 }
 
 /* component classes (Tailwind v4 custom utilities so they can be composed with @apply) */
-@utility card { @apply rounded-2xl border border-slate-200/80 bg-white shadow-[var(--shadow-card)] dark:border-ink-700 dark:bg-ink-850 dark:shadow-none; }
+@utility card { @apply rounded-2xl border border-slate-200/70 bg-white shadow-[var(--shadow-card)] dark:border-ink-700/80 dark:bg-ink-850 dark:shadow-[inset_0_1px_0_rgb(255_255_255/0.035)]; }
+/* interactive cards (tiles, company cards): lift slightly on hover */
+@utility card-hover { @apply transition-[translate,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:border-slate-300/80 hover:shadow-[var(--shadow-lift)] dark:hover:border-ink-600; }
 @utility card-pad { @apply p-4 sm:p-5; }
 @utility btn { @apply inline-flex items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50; }
-@utility btn-primary { @apply btn bg-brand-600 text-white hover:bg-brand-700; }
+@utility btn-primary { @apply btn bg-brand-600 bg-linear-to-b from-white/12 to-transparent text-white shadow-[var(--shadow-btn)] hover:bg-brand-700; }
 @utility btn-ghost { @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-ink-700; }
-@utility btn-outline { @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-ink-600 dark:bg-ink-850 dark:text-slate-200 dark:hover:bg-ink-800; }
+@utility btn-outline { @apply btn border border-slate-200 bg-white text-slate-700 shadow-[0_1px_2px_rgb(16_24_40/0.05)] hover:border-slate-300 hover:bg-slate-50 dark:border-ink-600 dark:bg-ink-850 dark:text-slate-200 dark:shadow-none dark:hover:bg-ink-800; }
 @utility btn-danger { @apply btn bg-down/10 text-down hover:bg-down/20; }
-@utility input { @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-ink-600 dark:bg-ink-900 dark:text-slate-100; }
+@utility input { @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-[0_1px_2px_rgb(16_24_40/0.04)] transition-[border-color,box-shadow] placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-4 focus:ring-brand-500/15 dark:border-ink-600 dark:bg-ink-900 dark:text-slate-100 dark:shadow-none; }
 @utility label { @apply mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400; }
 @utility chip { @apply inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition-colors hover:border-brand-300 hover:text-brand-700 dark:border-ink-600 dark:text-slate-300 dark:hover:border-brand-500; }
 @utility chip-active { @apply border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/15 dark:text-brand-200; }
 @utility muted { @apply text-slate-500 dark:text-slate-400; }
 @utility section-title { @apply text-[15px] font-semibold text-slate-900 dark:text-white; }
-@utility table-head { @apply sticky top-0 z-10 bg-slate-50 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-ink-800 dark:text-slate-400; }
+@utility table-head { @apply sticky top-0 z-10 bg-slate-50/95 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 backdrop-blur-sm dark:bg-ink-800/95 dark:text-slate-400; }
 @utility scroll-row { @apply flex snap-x gap-3 overflow-x-auto pb-2 [scrollbar-width:thin]; }
+
+/* hero surfaces (Home summary, Virtual Invest): layered gradient + faint grid texture */
+.hero-surface, .hero-surface-brand { position: relative; isolation: isolate; overflow: hidden;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 18px 40px -22px rgb(7 11 22 / 0.55); }
+.hero-surface { background-color: #0b1226;
+  background-image: radial-gradient(42rem 16rem at 100% -10%, rgb(79 99 244 / 0.42), transparent 62%),
+    radial-gradient(26rem 12rem at -5% 110%, rgb(245 158 11 / 0.12), transparent 62%), linear-gradient(180deg, #0f1833, #0a1124); }
+.hero-surface-brand { background-color: #2c33a5;
+  background-image: radial-gradient(40rem 18rem at 100% 0%, rgb(156 171 253 / 0.38), transparent 60%),
+    radial-gradient(24rem 14rem at 0% 120%, rgb(253 186 77 / 0.16), transparent 60%), linear-gradient(135deg, #3f4be8, #2a3183 55%, #0f1833); }
+.hero-surface::before, .hero-surface-brand::before { content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image: linear-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.05) 1px, transparent 1px);
+  background-size: 32px 32px; mask-image: radial-gradient(ellipse 70% 90% at 75% 0%, #000 10%, transparent 70%); }
 
 /* page enter transition */
 @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-.page-enter { animation: fade-up 0.22s ease-out; }
+.page-enter { animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
 @keyframes shimmer { 100% { transform: translateX(100%); } }
 .skeleton { position: relative; overflow: hidden; @apply rounded-lg bg-slate-200/70 dark:bg-ink-700; }
 .skeleton::after { content: ''; position: absolute; inset: 0; transform: translateX(-100%);

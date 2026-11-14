@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.5.2] – 15 Nov 2026 – Premium visual refresh
+Visual changes only. No new sections, and no changes to data, calculations or behaviour.
+
+### Changed
+- **Typography:** Inter's optical-size version, so large headings and prices use sharper display letterforms, with tighter heading spacing.
+- **Surfaces:** a softer page background. Cards have layered shadows and lighter borders, with a subtle top highlight in dark mode.
+- **Hover feedback:** index tiles, company cards, heat-map tiles and the Virtual Invest card lift slightly on hover. Market-mover rows highlight.
+- **Hero banners** (Home summary and Virtual Invest): a deep gradient with a soft glow and a faint grid texture. The market clock pill reads clearly on the dark banner in both themes.
+- **Navigation:**
+  - The active item in the sidebar and the News section list is a soft brand tint with a brand-coloured icon, replacing the heavy black pill.
+  - The phone tab bar shows a small indicator above the active tab.
+- **Header:** frosted-glass bar, a softer search field with a key-cap shortcut hint, and a gradient profile avatar.
+- **Logo:** gradient tile with a light sheen.
+- **Controls:**
+  - Primary buttons have a subtle gradient and inner highlight. Outline buttons and inputs have a hairline shadow.
+  - Inputs show a softer, wider focus ring.
+  - Segmented switches and tabs are refined.
+  - Empty states have a tinted background.
+- **Simple price chart:** the line now has a soft gradient fill underneath. The data, colours and hover readout are unchanged.
+- **README screenshots** were regenerated from the current app: Home (light and dark), Company, Valuation Lab, Virtual Invest (desktop and phone) and the advanced chart.
+
 ## [2.5.1] – 13 Nov 2026 – Hardening
 ### Fixed
 - **No crash screen:** a rendering error anywhere used to blank the whole site. Error boundaries now contain it to the page (or widget), with Reload / Try again / Home. After an update, an open tab that requests old page code reloads itself once.

@@ -59,7 +59,7 @@ function useNow(ms = 30_000) {
 }
 
 /** "Market open · closes in 2h 10m" / "Pre-open" / "Closed · opens in 7h 15m" (holidays detected from data). */
-export function MarketClock({ compact = false }: { compact?: boolean }) {
+export function MarketClock({ compact = false, onDark = false }: { compact?: boolean; onDark?: boolean }) {
   const q = useMarketStatus()
   const now = useNow()
   const s = q.data
@@ -71,7 +71,8 @@ export function MarketClock({ compact = false }: { compact?: boolean }) {
   return (
     <span title={`${s.note}\n${s.realtime ? 'Real-time quotes: ' + s.provider : 'Prices are delayed (free data source).'}`}
       className={cx('inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium',
-        open ? 'bg-up/10 text-up' : pre ? 'bg-saffron-500/15 text-saffron-500' : 'bg-slate-500/10 text-slate-500 dark:text-slate-400')}>
+        onDark ? cx('ring-1', open ? 'bg-emerald-400/15 text-emerald-300 ring-emerald-300/25' : pre ? 'bg-amber-400/15 text-amber-200 ring-amber-300/25' : 'bg-white/10 text-slate-200 ring-white/15')
+          : open ? 'bg-up/10 text-up' : pre ? 'bg-saffron-500/15 text-saffron-500' : 'bg-slate-500/10 text-slate-500 dark:text-slate-400')}>
       <span className="relative flex h-2 w-2">
         {(open || pre) && <span className={cx('absolute inline-flex h-full w-full animate-ping rounded-full opacity-60', open ? 'bg-up' : 'bg-saffron-500')} />}
         <span className={cx('relative inline-flex h-2 w-2 rounded-full', open ? 'bg-up' : pre ? 'bg-saffron-500' : 'bg-slate-400')} />
@@ -133,8 +134,8 @@ export function MobileTabBar() {
       <ul className="mx-auto grid max-w-lg grid-cols-5">
         {TABS.map((t) => (
           <li key={t.to}>
-            <NavLink to={t.to} end={t.to === '/'} className={({ isActive }) => cx('flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium [&>svg]:h-5 [&>svg]:w-5',
-              isActive ? 'text-brand-600 dark:text-brand-300' : 'text-slate-500 dark:text-slate-400')}>
+            <NavLink to={t.to} end={t.to === '/'} className={({ isActive }) => cx('relative flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors [&>svg]:h-5 [&>svg]:w-5',
+              isActive ? 'text-brand-600 before:absolute before:top-0 before:h-[3px] before:w-8 before:rounded-b-full before:bg-brand-600 dark:text-brand-300 dark:before:bg-brand-400' : 'text-slate-500 dark:text-slate-400')}>
               {t.icon}{t.label}
             </NavLink>
           </li>

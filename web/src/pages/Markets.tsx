@@ -41,7 +41,7 @@ export default function Markets() {
         {ov.isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[84px] w-[170px] shrink-0 rounded-2xl" />)}
         {idx.map((i) => (
           <button key={i.symbol} onClick={() => setParams({ symbol: i.symbol })}
-            className={cx('card w-[170px] shrink-0 p-3 text-left transition-colors', symbol === i.symbol ? 'border-brand-500 ring-2 ring-brand-500/20' : 'hover:border-brand-300')}>
+            className={cx('card w-[170px] shrink-0 p-3 text-left', symbol === i.symbol ? 'border-brand-500 ring-4 ring-brand-500/15 dark:border-brand-400' : 'card-hover')}>
             <div className="truncate text-[11px] font-semibold muted">{i.name}</div>
             <div className="text-sm font-semibold"><LivePrice value={i.last} /></div>
             <div className="flex items-center justify-between"><ChangePill value={i.change_pct} /><Sparkline data={i.spark} width={56} height={22} /></div>

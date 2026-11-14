@@ -1,4 +1,23 @@
-# EquityPilot AI – Test Report (v2.5.1, 13 Nov 2026)
+# EquityPilot AI – Test Report (v2.5.2, 15 Nov 2026)
+
+## 0. Premium visual refresh (v2.5.2, 15 Nov 2026)
+
+Visual-only release. No new sections and no changes to data, APIs or calculations.
+
+| Check | Result |
+|---|---|
+| `python -m pytest` (all backend tests, offline) | **238 passed, 0 failed** (version test updated to 2.5.2) |
+| `npm run build` (includes the `tsc -b` type-check) | Passed, no errors |
+| `npx oxlint src` | 0 errors; 5 warnings, all in code this release did not change |
+| Screenshots in headless Edge against the live server | Light (1440 px): Home, Market Tracker, Company, Valuation Lab, Virtual Invest, News, advanced chart. Dark (1440 px): Home, Company. Phone (390 px): Home, Virtual Invest. No console errors, no horizontal overflow and no "NaN" or "undefined" text on any page |
+| Simple chart with the gradient fill | Value, colour (green or red against the reference line) and the "as of" time are unchanged |
+| Market clock pill on the dark Home banner | Readable in both themes |
+
+Everything below this section is the v2.5.1 report.
+
+---
+
+# Test Report (v2.5.1, 13 Nov 2026)
 
 Everything below was run on 13 Nov 2026 on Windows 11 against the code in this commit. "Live data" means the running server on
 `localhost:8000` with the real Yahoo Finance, NSE, RBI, SEBI, BSE and publisher RSS feeds. Automated tests run offline on a

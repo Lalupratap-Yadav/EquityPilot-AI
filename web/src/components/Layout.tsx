@@ -37,7 +37,12 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
 function Logo({ mini }: { mini?: boolean }) {
   return (
     <Link to="/" className={cx('flex items-center gap-2.5', mini ? 'justify-center' : 'px-2')} aria-label="EquityPilot AI home">
-      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden><rect width="64" height="64" rx="16" fill="#3F5BF6" />
+      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden className="shrink-0 drop-shadow-[0_2px_6px_rgb(63_75_232/0.35)]">
+        <defs>
+          <linearGradient id="ep-logo-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#5b6cf9" /><stop offset="1" stopColor="#2f3ac4" /></linearGradient>
+          <linearGradient id="ep-logo-sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity="0.22" /><stop offset="0.5" stopColor="#fff" stopOpacity="0" /></linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="16" fill="url(#ep-logo-bg)" /><rect width="64" height="64" rx="16" fill="url(#ep-logo-sheen)" />
         <path d="M14 44 L28 30 L36 37 L50 20" fill="none" stroke="#fff" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M42 19 L51 19 L51 28" fill="none" stroke="#FDBA4D" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       {!mini && <div className="leading-tight">
@@ -60,9 +65,10 @@ function Sidebar({ onNavigate, mini = false, onToggle }: { onNavigate?: () => vo
             {g.items.map((it) => (
               <li key={it.to}>
                 <NavLink to={it.to} end={it.to === '/'} onClick={onNavigate} title={mini ? it.label : undefined} aria-label={mini ? it.label : undefined}
-                  className={({ isActive }) => cx('flex items-center rounded-lg text-[13px] font-medium transition-colors [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0',
+                  className={({ isActive }) => cx('flex items-center rounded-lg text-[13px] font-medium transition-colors [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0 [&>svg]:transition-colors',
                     mini ? 'justify-center p-2.5' : 'gap-2.5 px-3 py-[7px]',
-                    isActive ? 'bg-ink-900 text-white dark:bg-brand-600' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-ink-800 dark:hover:text-white')}>
+                    isActive ? 'bg-brand-50 font-semibold text-brand-700 shadow-[inset_0_0_0_1px_rgb(79_99_244/0.14)] [&>svg]:text-brand-600 dark:bg-brand-500/15 dark:text-white dark:shadow-[inset_0_0_0_1px_rgb(113_132_250/0.25)] dark:[&>svg]:text-brand-300'
+                      : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 [&>svg]:text-slate-400 dark:text-slate-300 dark:hover:bg-ink-800 dark:hover:text-white dark:[&>svg]:text-slate-500')}>
                   {it.icon}{!mini && it.label}
                 </NavLink>
               </li>
@@ -166,7 +172,7 @@ export default function Layout() {
   const user = me.data?.user
   return (
     <div className="min-h-screen">
-      <aside className={cx('fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200 bg-white transition-[width] duration-200 lg:block dark:border-ink-700 dark:bg-ink-900', mini ? 'w-[68px]' : 'w-56')}>
+      <aside className={cx('fixed inset-y-0 left-0 z-30 hidden border-r border-slate-200/80 bg-white transition-[width] duration-200 lg:block dark:border-ink-700/80 dark:bg-ink-900', mini ? 'w-[68px]' : 'w-56')}>
         <Sidebar mini={mini} onToggle={toggleMini} />
       </aside>
       {drawer && (
@@ -180,12 +186,12 @@ export default function Layout() {
         </div>
       )}
       <div className={cx('transition-[padding] duration-200', mini ? 'lg:pl-[68px]' : 'lg:pl-56')}>
-        <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-md dark:border-ink-700 dark:bg-ink-950/80">
+        <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/75 backdrop-blur-xl backdrop-saturate-150 dark:border-ink-700/80 dark:bg-ink-950/75">
           <div className="mx-auto flex h-14 max-w-[1400px] items-center gap-2 px-4 sm:px-6">
             <button className="btn-ghost p-2 lg:hidden" onClick={() => setDrawer(true)} aria-label="Open menu"><Menu className="h-5 w-5" /></button>
-            <button onClick={() => setPalette(true)} className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-400 transition-colors hover:border-brand-300 sm:max-w-md dark:border-ink-600 dark:bg-ink-850">
+            <button onClick={() => setPalette(true)} className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border border-slate-200/90 bg-slate-100/60 px-3 text-left text-sm text-slate-400 shadow-[inset_0_1px_2px_rgb(16_24_40/0.04)] transition-all hover:border-slate-300 hover:bg-white hover:shadow-[0_1px_3px_rgb(16_24_40/0.06)] sm:max-w-md dark:border-ink-600 dark:bg-ink-850 dark:shadow-none dark:hover:bg-ink-800">
               <Search className="h-4 w-4 shrink-0" /><span className="flex-1 truncate"><span className="sm:hidden">Search…</span><span className="hidden sm:inline">Search 5,500+ companies, symbols, industries…</span></span>
-              <kbd className="hidden rounded-md border border-slate-200 px-1.5 text-[10px] font-semibold sm:inline dark:border-ink-600">Ctrl K</kbd>
+              <kbd className="hidden rounded-md border border-slate-200 bg-white px-1.5 py-px text-[10px] font-semibold text-slate-500 shadow-[0_1px_0_rgb(16_24_40/0.06)] sm:inline dark:border-ink-600 dark:bg-ink-900 dark:text-slate-400">Ctrl K</kbd>
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-1">
               <span className="mr-1 hidden lg:inline-flex"><ExperienceSwitch /></span>
@@ -195,7 +201,7 @@ export default function Layout() {
               </button>
               <Notifications />
               <Link to="/settings" className="ml-1 flex items-center gap-2 rounded-xl px-2 py-1 hover:bg-slate-100 dark:hover:bg-ink-800">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-200">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-linear-to-br from-brand-400 to-brand-700 text-xs font-bold text-white ring-2 ring-white dark:ring-ink-900">
                   {(user?.display_name ?? '?').slice(0, 1).toUpperCase()}
                 </span>
                 <span className="hidden text-sm font-medium md:inline">{user?.display_name ?? '…'}</span>

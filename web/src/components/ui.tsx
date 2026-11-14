@@ -11,7 +11,7 @@ export function PageHeader({ title, subtitle, actions, eyebrow }: { title: React
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         {eyebrow && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-brand-600 dark:text-brand-300">{eyebrow}</div>}
-        <h1 className="text-2xl font-semibold sm:text-[26px]">{title}</h1>
+        <h1 className="text-2xl font-semibold sm:text-[28px]">{title}</h1>
         {subtitle && <p className="mt-1 max-w-3xl text-sm muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -89,7 +89,7 @@ export function ChangePill({ value, className, size = 'sm' }: { value: number | 
 
 export function Stat({ label, value, sub, help, tone }: { label: ReactNode; value: ReactNode; sub?: ReactNode; help?: string; tone?: 'up' | 'down' }) {
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200/80 bg-white px-3.5 py-3 dark:border-ink-700 dark:bg-ink-850">
+    <div className="min-w-0 rounded-xl border border-slate-200/70 bg-white px-3.5 py-3 shadow-[0_1px_2px_rgb(16_24_40/0.04)] dark:border-ink-700/80 dark:bg-ink-850 dark:shadow-none">
       <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide muted">
         <span className="truncate">{label}</span>{help && <InfoTip text={help} />}
       </div>
@@ -132,8 +132,8 @@ export function Loading({ label = 'Loading…', className }: { label?: string; c
 
 export function EmptyState({ icon, title, body, action }: { icon?: ReactNode; title: string; body?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 px-6 py-10 text-center dark:border-ink-600">
-      {icon && <div className="mb-3 text-slate-400">{icon}</div>}
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300/90 bg-slate-50/60 px-6 py-10 text-center dark:border-ink-600 dark:bg-ink-900/40">
+      {icon && <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-white text-slate-400 shadow-[var(--shadow-card)] ring-1 ring-slate-200/70 dark:bg-ink-800 dark:ring-ink-700">{icon}</div>}
       <div className="font-semibold text-slate-800 dark:text-slate-100">{title}</div>
       {body && <div className="mt-1 max-w-md text-sm muted">{body}</div>}
       {action && <div className="mt-4">{action}</div>}
@@ -163,7 +163,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, className }: { t
       {tabs.map((t) => (
         <button key={t.id} role="tab" aria-selected={value === t.id} onClick={() => onChange(t.id)}
           className={cx('-mb-px whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors',
-            value === t.id ? 'border-brand-600 text-brand-700 dark:border-brand-400 dark:text-brand-200' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>
+            value === t.id ? 'border-brand-600 text-slate-900 dark:border-brand-400 dark:text-white' : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800 dark:hover:border-ink-600 dark:hover:text-slate-200')}>
           {t.label}
         </button>
       ))}
@@ -173,11 +173,11 @@ export function Tabs<T extends string>({ tabs, value, onChange, className }: { t
 
 export function Segmented<T extends string>({ options, value, onChange, size = 'sm' }: { options: { id: T; label: ReactNode }[]; value: T; onChange: (v: T) => void; size?: 'sm' | 'xs' }) {
   return (
-    <div className="inline-flex rounded-xl bg-slate-100 p-0.5 dark:bg-ink-800">
+    <div className="inline-flex rounded-xl bg-slate-100/90 p-0.5 shadow-[inset_0_1px_2px_rgb(16_24_40/0.05)] dark:bg-ink-800 dark:shadow-none">
       {options.map((o) => (
         <button key={o.id} onClick={() => onChange(o.id)}
           className={cx('rounded-[10px] font-medium transition-all', size === 'xs' ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm',
-            value === o.id ? 'bg-white text-slate-900 shadow-sm dark:bg-ink-600 dark:text-white' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>
+            value === o.id ? 'bg-white text-slate-900 shadow-[0_1px_2px_rgb(16_24_40/0.08),0_0_0_1px_rgb(16_24_40/0.04)] dark:bg-ink-600 dark:text-white dark:shadow-none' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200')}>
           {o.label}
         </button>
       ))}

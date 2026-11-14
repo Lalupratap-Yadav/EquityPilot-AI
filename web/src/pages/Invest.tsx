@@ -36,7 +36,7 @@ export default function Invest() {
 
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-brand-700 via-brand-800 to-ink-900 p-6 text-white">
+      <section className="hero-surface-brand rounded-3xl p-6 text-white">
         <div className="flex flex-wrap items-start justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 text-sm text-brand-100"><GraduationCap className="h-4 w-4" />EquityPilot Virtual Invest · practice with virtual money</div>

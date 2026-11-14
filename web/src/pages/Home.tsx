@@ -28,11 +28,11 @@ function AskBox() {
   const go = (text: string) => { if (text.trim()) nav(`/assistant?q=${encodeURIComponent(text.trim())}`) }
   return (
     <div className="min-w-0">
-      <form onSubmit={(e) => { e.preventDefault(); go(q) }} className="flex items-center gap-2 rounded-xl bg-white/10 p-1.5 ring-1 ring-white/15 focus-within:ring-white/40">
+      <form onSubmit={(e) => { e.preventDefault(); go(q) }} className="flex items-center gap-2 rounded-xl bg-white/[0.08] p-1.5 shadow-[inset_0_1px_0_rgb(255_255_255/0.06)] ring-1 ring-white/15 backdrop-blur-sm transition-shadow focus-within:ring-white/40">
         <Sparkles className="ml-2 h-4 w-4 shrink-0 text-saffron-400" />
         <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={1000} aria-label="Ask the AI research assistant"
           placeholder="Ask anything - a company, a comparison, the market…" className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-white placeholder:text-slate-300 focus:outline-none" />
-        <button className="btn shrink-0 bg-white text-ink-900 hover:bg-brand-50" disabled={!q.trim()}>Ask AI</button>
+        <button className="btn shrink-0 bg-white text-ink-900 shadow-[0_1px_2px_rgb(0_0_0/0.2)] hover:bg-brand-50" disabled={!q.trim()}>Ask AI</button>
       </form>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {ASK_EXAMPLES.slice(0, 3).map((x) => <button key={x} onClick={() => go(x)} className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-slate-200 transition-colors hover:bg-white/20">{x}</button>)}
@@ -66,12 +66,12 @@ export default function Home() {
   return (
     <div className="space-y-6">
       {/* ---------------------------------------------- System 1 summary */}
-      <section className="rounded-2xl bg-ink-900 p-4 text-white sm:p-5 dark:bg-ink-850 dark:ring-1 dark:ring-ink-700">
+      <section className="hero-surface rounded-2xl p-4 text-white sm:p-6 dark:ring-1 dark:ring-white/5">
         <div className="grid items-center gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
               <span>{greeting()}{me.data?.user && !me.data.user.is_guest ? `, ${me.data.user.display_name}` : ''}</span>
-              <span className="rounded-full bg-white/90"><MarketClock /></span>
+              <MarketClock onDark />
             </div>
             {nifty && b ? (
               <p className="mt-2 text-[15px] leading-relaxed text-slate-200">
@@ -95,7 +95,7 @@ export default function Home() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {ov.isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)}
           {broad.map((i) => (
-            <Link key={i.symbol} to={`/markets?symbol=${encodeURIComponent(i.symbol)}`} className="card p-3.5 transition-colors hover:border-brand-300">
+            <Link key={i.symbol} to={`/markets?symbol=${encodeURIComponent(i.symbol)}`} className="card card-hover p-3.5">
               <div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs font-semibold muted" title={i.name}>{i.name}</span><DataBadge className="shrink-0" type={ov.data?.status.open ? (ov.data.status.realtime ? 'live' : 'delayed') : 'close'} /></div>
               <div className="mt-1 text-lg font-semibold"><LivePrice value={i.last} /></div>
               <div className="flex items-end justify-between">
@@ -126,7 +126,7 @@ export default function Home() {
             {mv.isLoading ? <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div> : (
               <ul className="divide-y divide-slate-100 dark:divide-ink-700">
                 {(mv.data?.[moverTab] ?? []).map((m) => (
-                  <li key={m.symbol}><Link to={`/company/${encodeURIComponent(m.symbol)}`} className="flex items-center gap-3 py-2.5 hover:opacity-80">
+                  <li key={m.symbol}><Link to={`/company/${encodeURIComponent(m.symbol)}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-ink-800/70">
                     <CompanyAvatar symbol={m.symbol} size="sm" />
                     <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{m.name}</div><div className="text-xs muted">{baseSymbol(m.symbol)}</div></div>
                     <div className="text-right"><div className="num text-sm font-semibold">{inr(m.price)}</div>
@@ -143,7 +143,7 @@ export default function Home() {
               {(sec.data?.industries ?? []).map((s) => {
                 const a = Math.min(1, Math.abs(s.avg_change) / 0.025)
                 return (
-                  <Link key={s.industry} to={`/industries/${s.industry}`} className="rounded-xl p-3 transition-transform hover:scale-[1.02]"
+                  <Link key={s.industry} to={`/industries/${s.industry}`} className="rounded-xl p-3 ring-1 ring-inset ring-black/[0.03] transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] dark:ring-white/5"
                     style={{ background: s.avg_change >= 0 ? `rgba(18,161,80,${0.08 + a * 0.32})` : `rgba(220,53,69,${0.08 + a * 0.32})` }}>
                     <div className="truncate text-xs font-semibold">{s.name}</div>
                     <div className={cx('num mt-1 text-base font-bold', s.avg_change >= 0 ? 'text-up' : 'text-down')}>{pct(s.avg_change, 2, true)}</div>
@@ -173,7 +173,7 @@ export default function Home() {
             )}
           </Card>
 
-          <Link to="/invest" className="card block p-5 transition-colors hover:border-brand-300">
+          <Link to="/invest" className="card card-hover block p-5">
             <div className="flex items-center gap-2 text-sm font-semibold"><PiggyBank className="h-4 w-4 text-brand-600" />Virtual Invest</div>
             {inv.data ? (<>
               <div className="num mt-2 text-2xl font-semibold">{inr(inv.data.total_value, 0)}</div>

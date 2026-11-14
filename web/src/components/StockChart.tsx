@@ -138,7 +138,7 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
     refLine.current = null
     const common = { priceLineVisible: false, lastValueVisible: true }
     if (simple) {
-      main.current = chart.addSeries(LineSeries, { priceLineVisible: false, lastValueVisible: false, lineWidth: 2, crosshairMarkerRadius: 5,
+      main.current = chart.addSeries(AreaSeries, { priceLineVisible: false, lastValueVisible: false, lineWidth: 2, crosshairMarkerRadius: 5,
         crosshairMarkerBorderWidth: 2, crosshairMarkerBorderColor: c.bg, lineType: 0 })
     } else if (style === 'area') {
       main.current = chart.addSeries(AreaSeries, { ...common, lineWidth: 2, crosshairMarkerRadius: 5, crosshairMarkerBorderWidth: 2, crosshairMarkerBorderColor: c.bg })
@@ -198,7 +198,7 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
     const last = data.bars[data.bars.length - 1].close
     const color = last >= base ? UP : DOWN
     if (mode === 'simple') {
-      s.applyOptions({ color })
+      s.applyOptions({ lineColor: color, topColor: color + (c.theme === 'dark' ? '33' : '29'), bottomColor: color + '00' })
     } else if (style === 'area') {
       s.applyOptions({ lineColor: color, topColor: color + '38', bottomColor: color + '03' })
     }

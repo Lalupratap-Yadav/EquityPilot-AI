@@ -14,7 +14,7 @@ export function CompanyAvatar({ symbol, size = 'md' }: { symbol: string; size?: 
   for (const ch of b) h = (h * 31 + ch.charCodeAt(0)) % 360
   const dims = size === 'lg' ? 'h-12 w-12 text-base' : size === 'sm' ? 'h-7 w-7 text-[10px]' : 'h-9 w-9 text-xs'
   return (
-    <div className={cx('flex shrink-0 items-center justify-center rounded-xl font-bold text-white', dims)}
+    <div className={cx('flex shrink-0 items-center justify-center rounded-xl font-bold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.22),0_1px_2px_rgb(16_24_40/0.12)]', dims)}
       style={{ background: `linear-gradient(135deg, hsl(${h} 55% 48%), hsl(${(h + 40) % 360} 60% 38%))` }} aria-hidden>
       {b.replace('SAMPLE-', '').slice(0, 2)}
     </div>
@@ -24,7 +24,7 @@ export function CompanyAvatar({ symbol, size = 'md' }: { symbol: string; size?: 
 export function CompanyCard({ c, className }: { c: CompanyCardData; className?: string }) {
   return (
     <Link to={`/company/${encodeURIComponent(c.symbol)}`}
-      className={cx('card group block w-[220px] shrink-0 snap-start p-4 transition-all hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-[var(--shadow-pop)] dark:hover:border-brand-500/60', className)}>
+      className={cx('card card-hover group block w-[220px] shrink-0 snap-start p-4', className)}>
       <div className="flex items-center gap-2.5">
         <CompanyAvatar symbol={c.symbol} />
         <div className="min-w-0">

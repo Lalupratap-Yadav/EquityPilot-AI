@@ -190,7 +190,7 @@ export default function News() {
           <ul className="card hidden p-1.5 lg:block">
             {SECTIONS.map(([k, l]) => (
               <li key={k}><button onClick={() => set({ section: k })} aria-current={section === k}
-                className={cx('flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-[13px]', section === k ? 'bg-ink-900 font-medium text-white dark:bg-brand-600' : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-ink-800')}>
+                className={cx('flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-[13px]', section === k ? 'bg-brand-50 font-semibold text-brand-700 shadow-[inset_0_0_0_1px_rgb(79_99_244/0.14)] dark:bg-brand-500/15 dark:text-white dark:shadow-[inset_0_0_0_1px_rgb(113_132_250/0.25)]' : 'text-slate-600 transition-colors hover:bg-slate-100/80 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-ink-800 dark:hover:text-white')}>
                 {l}{k === 'saved' && (saved.data?.items.length ?? 0) > 0 && <span className="text-[11px] opacity-70">{saved.data!.items.length}</span>}
               </button></li>))}
           </ul>
