@@ -20,7 +20,7 @@ export default function Invest() {
   const s = useQuery({ queryKey: ['invest-summary'], queryFn: () => api.get<Summary>('/invest/summary') })
   const trades = useQuery({ queryKey: ['invest-trades'], queryFn: () => api.get<Trade[]>('/invest/trades') })
   const perf = useQuery({ queryKey: ['invest-perf'], queryFn: () => api.get<{ series: { date: string; portfolio: number; nifty50?: number }[]; note: string }>('/invest/performance') })
-  const lb = useQuery({ queryKey: ['leaderboard'], queryFn: () => api.get<{ rows: { display_name: string; total_return: number; holdings: number }[]; note: string }>('/invest/leaderboard') })
+  const lb = useQuery({ queryKey: ['leaderboard'], queryFn: () => api.get<{ rows: { display_name: string; total_return: number }[]; note: string }>('/invest/leaderboard') })
   const me = useMe()
   const [pick, setPick] = useState<{ symbol: string; name: string } | null>(null)
   const [ticket, setTicket] = useState<{ symbol: string; name: string; side: 'BUY' | 'SELL' } | null>(null)

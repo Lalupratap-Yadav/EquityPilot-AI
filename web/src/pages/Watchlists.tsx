@@ -80,7 +80,7 @@ export default function Watchlists() {
         <button className="btn-primary mt-4 w-full" disabled={!edit?.name.trim()} onClick={() => saveList.mutate()}>Save</button>
       </Modal>
       <Modal open={!!note} onClose={() => setNote(null)} title={`Note · ${note ? baseSymbol(note.symbol) : ''}`}>
-        <textarea className="input min-h-[120px]" maxLength={1000} placeholder="Why are you watching this company? What would change your view?" value={note?.note ?? ''} onChange={(e) => setNote({ ...note!, note: e.target.value })} />
+        <textarea className="input min-h-[120px]" maxLength={1000} placeholder="Private note - only you can see it" value={note?.note ?? ''} onChange={(e) => setNote({ ...note!, note: e.target.value })} />
         <button className="btn-primary mt-4 w-full" onClick={() => saveNote.mutate()}>Save note</button>
       </Modal>
     </div>

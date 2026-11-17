@@ -41,7 +41,7 @@ export default function Research() {
       facts: [`P/E ${mult(m.pe)} · P/B ${mult(m.pb)}`, 'DCF, scenarios, sensitivity, reverse DCF'], to: `/valuation/${s}`, cta: 'Valuation Lab' },
     { id: 'risk', title: 'Risk analysis', q: 'What could go wrong - financially, operationally, in governance or regulation?',
       facts: ['Rule-based checks with thresholds', 'Sector & regulatory considerations'], to: `/company/${s}?tab=risk`, cta: 'Risk analysis' },
-    { id: 'report', title: 'Write it up', q: 'Summarise your thesis, assumptions and risks with sources.',
+    { id: 'report', title: 'Write it up', q: 'Summarise the evidence, the assumptions used and the risks, with sources.',
       facts: ['PDF report with tables, charts and disclosures'], to: `/reports?symbol=${s}`, cta: 'Generate report' },
   ] : []
   const progress = steps.length ? (done[symbol] ?? []).length / steps.length : 0

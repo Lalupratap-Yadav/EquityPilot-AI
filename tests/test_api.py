@@ -91,7 +91,9 @@ def test_paper_split_and_dividend_adjustments():
         assert P.apply_corporate_actions(uid) == 0                       # idempotent
         s = P.summary(uid, with_quotes=False)
         h = s["holdings"][0]
-        assert h["qty"] == 20 and s["cash"] == pytest.approx(cash_before + 50.0)
+        # The provider restates dividends for later splits: 5.0 per share today = 10.0 per share before the 2:1 split,
+        # so 10 shares held on the dividend ex-date receive 100 (verified on TCS: 0.375 x 8 = the Rs 3 actually paid in 2004).
+        assert h["qty"] == 20 and s["cash"] == pytest.approx(cash_before + 100.0)
         db.execute(db.delete(db.corporate_actions).where(db.corporate_actions.c.source == "test"))
 
 

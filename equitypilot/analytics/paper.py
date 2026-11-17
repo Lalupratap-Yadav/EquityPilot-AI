@@ -5,7 +5,9 @@
   companies) and the quote's status and timestamp are stored with the trade.
 * Buys cannot exceed available virtual cash; sells cannot exceed the quantity held.
 * Corporate actions (dividends, splits from the provider) are applied to positions held
-  before the ex-date, so P&L stays correct.
+  before the ex-date, so P&L stays correct. The provider restates history for every later split (bonus issues
+  appear as splits): its past closes and dividend amounts are divided by the split factor. Both are converted back
+  to the amounts that applied on the day, so a split is never counted twice and dividends are not under-credited.
 * No brokerage, STT, stamp duty, GST or DP charges are simulated (stated in the UI).
 """
 from __future__ import annotations
@@ -72,6 +74,19 @@ def _qty_before(rows: pd.DataFrame, symbol: str, when: datetime) -> float:
     return q
 
 
+def split_factor_after(splits: pd.DataFrame, when) -> float:
+    """Product of split factors with an ex-date after `when` (1.0 when none). Multiplying a provider value for date
+    `when` by this factor gives the amount as it was on that date (before later splits were applied to history)."""
+    if splits is None or splits.empty:
+        return 1.0
+    d = pd.Timestamp(when).date()
+    f = 1.0
+    for _, s in splits.iterrows():
+        if pd.Timestamp(s["date"]).date() > d and s["value"] and float(s["value"]) > 0:
+            f *= float(s["value"])
+    return f
+
+
 def apply_corporate_actions(uid: int) -> int:
     """Credit dividends and apply splits for positions held before each ex-date. Idempotent."""
     rows = trades(uid)
@@ -86,6 +101,7 @@ def apply_corporate_actions(uid: int) -> int:
         if not last_ref or db.utcnow() - datetime.fromisoformat(last_ref) > timedelta(days=1):
             M.refresh_actions(sym)
         acts = M.get_actions(sym, since=first.date())
+        splits = acts[acts["type"] == "split"] if not acts.empty else acts
         for _, a in acts.iterrows():
             ex = datetime.combine(pd.Timestamp(a["date"]).date(), datetime.min.time()) - timedelta(hours=5, minutes=30)  # ex-date 00:00 IST in UTC
             tag = f"{a['type']} ex-date {pd.Timestamp(a['date']).date()}"
@@ -96,9 +112,10 @@ def apply_corporate_actions(uid: int) -> int:
             if held <= 0:
                 continue
             if a["type"] == "dividend":
-                amt = held * float(a["value"])
+                per_share = float(a["value"]) * split_factor_after(splits, pd.Timestamp(a["date"]).date())
+                amt = held * per_share
                 cash += amt
-                rec = {"kind": "DIVIDEND", "qty": held, "price": float(a["value"]), "amount": amt}
+                rec = {"kind": "DIVIDEND", "qty": held, "price": per_share, "amount": amt}
             else:
                 extra = held * (float(a["value"]) - 1)
                 rec = {"kind": "SPLIT", "qty": extra, "price": None, "amount": 0.0}
@@ -196,11 +213,13 @@ def performance(uid: int) -> pd.DataFrame:
     if len(days) < 2:
         return pd.DataFrame()
     symbols = rows["symbol"].unique().tolist() if not rows.empty else []
-    closes = {}
+    closes, splits_by = {}, {}
     for s in symbols:
         p = repo.get_prices(s, auto_refresh=False)
         if not p.empty:
-            closes[s] = p.set_index("date")["close"].sort_index()
+            closes[s] = p.set_index("date")["close"].sort_index().astype(float)
+            acts = M.get_actions(s)
+            splits_by[s] = acts[acts["type"] == "split"] if not acts.empty else acts
     bench = repo.get_prices("^NSEI", auto_refresh=False)
     nav = []
     for d in days:
@@ -213,7 +232,10 @@ def performance(uid: int) -> pd.DataFrame:
             if p["qty"] > 0 and s in closes:
                 c = closes[s][closes[s].index <= d]
                 if len(c):
-                    mv += p["qty"] * float(c.iloc[-1])
+                    # the provider's closes are in today's share units (adjusted for every split since); convert the latest
+                    # close on or before day d into day-d share units so it matches the quantity held that day - also when
+                    # the price history has not caught up with a split yet
+                    mv += p["qty"] * float(c.iloc[-1]) * split_factor_after(splits_by.get(s), pd.Timestamp(d).date())
         nav.append(cash + mv)
     out = pd.DataFrame({"date": days, "portfolio": np.array(nav) / float(acct["initial"]) * 100})
     if not bench.empty:
@@ -272,8 +294,8 @@ def tips(s: dict) -> list[str]:
                    "idea in portfolio risk.")
     losers = [x for x in h if (x["pnl_pct"] or 0) < -0.15]
     if losers:
-        out.append("Some positions are down more than 15%. Revisit the original research: has the business changed, or only "
-                   "the price? Writing down the reason for each trade helps evaluate decisions later.")
+        out.append("Some positions are down more than 15%. Check what has changed in the company's results or filings, "
+                   "not only in the price.")
     out.append("Virtual results exclude brokerage, taxes and other charges, which reduce real-world returns.")
     return out
 
@@ -286,6 +308,6 @@ def leaderboard(limit: int = 20) -> list[dict]:
         if accts.empty:
             continue
         s = summary(int(u["id"]))
-        out.append({"display_name": u["display_name"], "total_return": s["total_return"], "holdings": len(s["holdings"]),
-                    "since": s["started_at"]})
+        # only the display name the user chose and the overall return - never holdings, trades or position counts
+        out.append({"display_name": u["display_name"], "total_return": s["total_return"], "since": s["started_at"]})
     return sorted(out, key=lambda x: -x["total_return"])[:limit]
