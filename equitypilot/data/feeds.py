@@ -1,7 +1,8 @@
 """News & market-intelligence feeds from official RSS sources and the Yahoo aggregator.
 
 Official feeds (published by the organisations for subscription):
-* NSE - corporate announcements, financial results (links to the original filing PDFs)
+* NSE - corporate announcements, financial results (links to the original filing PDFs), board meetings and
+  corporate actions (ex-dates, record dates; used by the Earnings & Results and Corporate Actions pages)
 * RBI - press releases, notifications
 * SEBI - press releases, circulars, orders (combined RSS)
 Third-party: Yahoo Finance headlines for market indices and global benchmarks.
@@ -30,6 +31,10 @@ FEEDS = {
                           "source": "NSE India - corporate announcements (RSS)", "category": "Exchange disclosure", "ttl": 10},
     "nse_results": {"url": "https://nsearchives.nseindia.com/content/RSS/Financial_Results.xml",
                     "source": "NSE India - financial results (RSS)", "category": "Quarterly results", "ttl": 30},
+    "nse_board_meetings": {"url": "https://nsearchives.nseindia.com/content/RSS/Board_Meetings.xml",
+                           "source": "NSE India - board meetings (RSS)", "category": "Board meeting", "ttl": 30},
+    "nse_corporate_actions": {"url": "https://nsearchives.nseindia.com/content/RSS/Corporate_action.xml",
+                              "source": "NSE India - corporate actions (RSS)", "category": "Dividend & corporate action", "ttl": 60},
     "rbi_press": {"url": "https://www.rbi.org.in/pressreleases_rss.xml", "source": "Reserve Bank of India - press releases (RSS)",
                   "category": "Economy & RBI", "ttl": 60},
     "rbi_notifications": {"url": "https://www.rbi.org.in/notifications_rss.xml", "source": "Reserve Bank of India - notifications (RSS)",
@@ -185,7 +190,8 @@ def _download_feed(key: str, cfg: dict) -> tuple[bool, str]:
             continue
         symbol, category, summary = None, cfg["category"], it["description"][:600]
         if key.startswith("nse"):
-            symbol = names.get(_norm(it["title"]))
+            company = it["title"].split(" - Ex-Date")[0] if key == "nse_corporate_actions" else it["title"]
+            symbol = names.get(_norm(company))
             if key == "nse_announcements":
                 subj = it["description"].split("SUBJECT:")[-1].strip() if "SUBJECT:" in it["description"] else it["description"]
                 category = tag_subject(subj)

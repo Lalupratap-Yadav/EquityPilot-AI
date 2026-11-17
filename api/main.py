@@ -21,7 +21,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from equitypilot import config, db
 from equitypilot.data import feeds, marketdata, sample, securities
 
-from . import routes_company, routes_explore, routes_invest, routes_market, routes_news, routes_research, routes_search, routes_user
+from . import (routes_company, routes_events, routes_explore, routes_invest, routes_market, routes_news, routes_research,
+               routes_search, routes_user)
 from .core import secret_key
 
 class JsonFormatter(logging.Formatter):
@@ -179,7 +180,8 @@ async def unhandled(request: Request, exc: Exception):
     return JSONResponse({"detail": "Something went wrong on the server. The error has been logged."}, status_code=500)
 
 
-for r in (routes_search, routes_news, routes_market, routes_company, routes_explore, routes_user, routes_invest, routes_research):
+for r in (routes_search, routes_news, routes_events, routes_market, routes_company, routes_explore, routes_user, routes_invest,
+          routes_research):
     app.include_router(r.router)
 
 
