@@ -284,7 +284,8 @@ def search(query: str, limit: int = 12) -> list[dict]:
     """Search tracked companies and the full securities master by name, NSE/BSE symbol or ISIN.
     Falls back to typo-tolerant matching when the plain search finds little."""
     res = _search_plain(query, limit)
-    if len(res) < min(3, limit) and len((query or "").strip()) >= 3:
+    # typo-tolerant matching only when the plain search finds nothing, so near-misses never pad a good result list
+    if not res and len((query or "").strip()) >= 3:
         have = {r["symbol"] for r in res}
         for h in resolve(query, limit):
             if h["symbol"] in have:
@@ -295,6 +296,52 @@ def search(query: str, limit: int = 12) -> list[dict]:
     return res[:limit]
 
 
+def _word_start(q: str, text: str) -> bool:
+    """True when `q` starts a word in `text` ('infosys' in 'hcl infosystems', not 'tcs' in 'wstcstpapr')."""
+    import re as _re
+    return bool(q) and _re.search(r"(?<![a-z0-9])" + _re.escape(q), text or "") is not None
+
+
+def _merge_isin_changes(rows: pd.DataFrame) -> pd.DataFrame:
+    """The AMFI list and the NSE list can carry the same company under its old and new ISIN (the ISIN changes after a
+    split or face-value change: INE745G01035 -> INE745G01043). Rows with the same issuer code (ISIN characters 1-7)
+    and a matching name are one company: keep the NSE row and carry over the AMFI size category."""
+    rows = rows.copy()
+    rows["_issuer"] = rows["isin"].astype(str).str[:7]
+    rows["_nm"] = rows["name"].astype(str).str.lower().str.replace(r"[^a-z0-9]", "", regex=True).str.replace(r"(limited|ltd)$", "", regex=True)
+    keep = []
+    for _, g in rows.groupby(["_issuer", "_nm"], sort=False):
+        if len(g) == 1:
+            keep.append(g.iloc[0])
+            continue
+        nse = g[g["nse_symbol"].notna()]
+        best = (nse.iloc[0] if not nse.empty else g.iloc[0]).copy()
+        if best.get("category") is None or pd.isna(best.get("category")):
+            cats = g["category"].dropna()
+            best["category"] = cats.iloc[0] if not cats.empty else None
+        if (best.get("mcap_rank") is None or pd.isna(best.get("mcap_rank"))) and g["mcap_rank"].notna().any():
+            best["mcap_rank"] = g["mcap_rank"].dropna().iloc[0]
+        if (best.get("bse_symbol") is None or pd.isna(best.get("bse_symbol"))) and g["bse_symbol"].notna().any():
+            best["bse_symbol"] = g["bse_symbol"].dropna().iloc[0]
+        keep.append(best)
+    out = pd.DataFrame(keep).drop(columns=["_issuer", "_nm"])
+    order = {isin: i for i, isin in enumerate(rows["isin"])}
+    return out.sort_values("isin", key=lambda c: c.map(order)).reset_index(drop=True)
+
+
+_TRACKED: dict = {"t": 0.0, "rows": None}
+
+
+def _tracked_rows(ttl: float = 30) -> list[dict]:
+    """Tracked companies for search, cached briefly (the list changes only when a company is added)."""
+    if _TRACKED["rows"] is None or time.time() - _TRACKED["t"] > ttl:
+        comps = db.read_df(db.select(db.companies.c.symbol, db.companies.c.name, db.companies.c.sector,
+                                     db.companies.c.industry, db.companies.c.is_sample))
+        _TRACKED["rows"] = comps.astype(object).where(comps.notna(), None).to_dict("records")
+        _TRACKED["t"] = time.time()
+    return _TRACKED["rows"]
+
+
 def _search_plain(query: str, limit: int = 12) -> list[dict]:
     """Search tracked companies and the full securities master by name, NSE/BSE symbol or ISIN."""
     q = (query or "").strip()
@@ -302,25 +349,34 @@ def _search_plain(query: str, limit: int = 12) -> list[dict]:
         return []
     ql = q.lower()
     out: dict[str, dict] = {}
-    comps = db.read_df(db.select(db.companies.c.symbol, db.companies.c.name, db.companies.c.sector,
-                                 db.companies.c.industry, db.companies.c.is_sample))
-    comps = comps.astype(object).where(comps.notna(), None)
-    tracked = set(comps["symbol"])
-    for _, r in comps.iterrows():
+    comps = _tracked_rows()
+    tracked = {r["symbol"] for r in comps}
+    from .entities import ALIASES
+    for r in comps:
         base = r["symbol"].rsplit(".", 1)[0].lower()
         name = (r["name"] or "").lower()
-        score = 100 if base == ql else 80 if base.startswith(ql) else 70 if name.startswith(ql) else \
-            50 if ql in name or ql in base else 40 if ql in (r["industry"] or "").lower() or ql in (r["sector"] or "").lower() else 0
+        alias = ql in {a.lower() for a in ALIASES.get(r["symbol"], [])}     # "l&t", "hul", "ril", "sbi", "tata consultancy"
+        score = 100 if base == ql or alias else 80 if base.startswith(ql) else 70 if name.startswith(ql) else \
+            50 if _word_start(ql, name) else 40 if ql in (r["industry"] or "").lower() or ql in (r["sector"] or "").lower() else 0
         if score:
             out[r["symbol"]] = {"symbol": r["symbol"], "name": r["name"], "sector": r["sector"], "industry": r["industry"],
                                 "tracked": True, "is_sample": bool(r["is_sample"]), "score": score + 5}
     like = f"%{q}%"
     s = db.securities.c
-    rows = db.read_df(db.select(s.isin, s.name, s.nse_symbol, s.bse_symbol, s.category, s.mcap_rank)
-                      .where((s.name.ilike(like)) | (s.nse_symbol.ilike(like)) | (s.bse_symbol.ilike(like)) | (s.isin == q.upper()))
-                      .order_by(s.mcap_rank.is_(None), s.mcap_rank).limit(60))
+    cols = (s.isin, s.name, s.nse_symbol, s.bse_symbol, s.category, s.mcap_rank)
+    qu = q.upper()
+    # exact symbol / ISIN / name-prefix matches first: a short symbol such as "TRU" also occurs inside hundreds of names,
+    # and the broad query below is capped, so the exact match must never depend on that cap
+    exact = db.read_df(db.select(*cols).where((s.nse_symbol == qu) | (s.bse_symbol == qu) | (s.isin == qu) | s.name.ilike(f"{q}%"))
+                       .order_by(s.mcap_rank.is_(None), s.mcap_rank).limit(40))
+    broad = db.read_df(db.select(*cols).where((s.name.ilike(like)) | (s.nse_symbol.ilike(like)) | (s.bse_symbol.ilike(like)))
+                       .order_by(s.mcap_rank.is_(None), s.mcap_rank).limit(60))
+    rows = pd.concat([f for f in (exact, broad) if not f.empty], ignore_index=True) if not (exact.empty and broad.empty) else exact
+    if not rows.empty:
+        rows = rows.drop_duplicates("isin")
+        rows = _merge_isin_changes(rows)
     rows = rows.astype(object).where(rows.notna(), None)
-    for _, r in rows.iterrows():
+    for r in rows.to_dict("records"):
         sym = f"{r['nse_symbol']}.NS" if r["nse_symbol"] else (f"{r['bse_symbol']}.BO" if r["bse_symbol"] else None)
         if not sym or sym in out:
             if sym in out:
@@ -328,8 +384,11 @@ def _search_plain(query: str, limit: int = 12) -> list[dict]:
             continue
         base = (r["nse_symbol"] or r["bse_symbol"] or "").lower()
         name = (r["name"] or "").lower()
+        if not (base == ql or base.startswith(ql) or _word_start(ql, name) or (r["isin"] or "") == qu):
+            continue      # the query only occurs inside another word or symbol ("tcs" in WSTCSTPAPR): not a match
         score = 90 if base == ql else 60 if base.startswith(ql) else 55 if name.startswith(ql) else 30
         score += max(0, 10 - (r["mcap_rank"] or 5000) // 500)   # nudge larger companies up
+        score += 1 if r["nse_symbol"] else 0                     # on a tie, prefer the NSE listing
         out[sym] = {"symbol": sym, "name": r["name"], "sector": None, "industry": None, "tracked": sym in tracked,
                     "is_sample": False, "category": r["category"], "isin": r["isin"], "score": score}
     return sorted(out.values(), key=lambda x: -x["score"])[:limit]

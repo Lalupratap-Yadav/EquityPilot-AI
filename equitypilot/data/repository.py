@@ -125,6 +125,9 @@ def add_company(raw_symbol: str) -> tuple[bool, str, str]:
         ok2, m2 = fn(symbol)
         msgs.append(m2)
     db.log_activity("Added company", symbol)
+    from . import entities, securities as _S
+    _S._TRACKED["rows"] = None             # search and the news matcher see the new company at once
+    entities.reset_cache()
     return True, " ".join(msgs), symbol
 
 
