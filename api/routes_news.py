@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from equitypilot import db
 from equitypilot.content.industries import BY_ID, industry_of
+from equitypilot.data import entities as E
 from equitypilot.data import feeds as N
 from equitypilot.data import marketdata as M
 from equitypilot.data import repository as repo
@@ -75,7 +76,8 @@ def _company_maps() -> tuple[dict, dict]:
     return names, inds
 
 
-def _item(*, title, summary, url, source, publisher, published, fetched, feed, category, symbol, names, inds) -> dict:
+def _item(*, title, summary, url, source, publisher, published, fetched, feed, category, symbol, names, inds,
+          symbols: list[str] | None = None, match: str | None = None) -> dict:
     primary_feed = feed.startswith(("nse", "rbi", "sebi", "bse"))
     tier = "primary" if primary_feed else ST.tier(publisher or source)
     cat = category or "News"
@@ -102,7 +104,8 @@ def _item(*, title, summary, url, source, publisher, published, fetched, feed, c
             sections.add("ipo")
     elif feed.startswith("media_"):
         sections.add({"Indian market": "market", "Commodities & currency": "commodities", "Banking & financial services": "banking",
-                      "IPO & corporate actions": "ipo", "Economy": "economy", "Company news": "company"}.get(cat, "market"))
+                      "IPO & corporate actions": "ipo", "Economy": "economy",
+                      "Company news": "company" if symbols else "market"}.get(cat, "market"))
         if IPO_RE.search(title):
             sections.add("ipo")
     elif feed == "yahoo_market":
@@ -113,6 +116,13 @@ def _item(*, title, summary, url, source, publisher, published, fetched, feed, c
         if IPO_RE.search(title):
             sections.add("ipo")
     elif feed == "company":
+        sections |= {"company", "sector"}
+    elif feed == "company_general":            # a provider headline that does not name the company: general news only
+        sections.add("market")
+    symbols = list(symbols if symbols is not None else ([symbol] if symbol else []))
+    if not symbol and symbols:
+        symbol = symbols[0]
+    if symbols and feed.startswith(("media_", "yahoo")):
         sections |= {"company", "sector"}
     ind = inds.get(symbol) if symbol else None
     if ind in FIN_INDUSTRIES:
@@ -127,7 +137,8 @@ def _item(*, title, summary, url, source, publisher, published, fetched, feed, c
     title = re.sub(r"(?<![a-z])nbsp;", " ", _html.unescape(_html.unescape(title))).strip()
     return {"id": uid, "title": title, "summary": clean_sum, "url": url, "source": source, "publisher": publisher,
             "tier": tier, "kind": "Official disclosure" if tier == "primary" else "Media report", "category": cat,
-            "sections": sorted(sections), "symbol": symbol,
+            "sections": sorted(sections), "symbol": symbol, "symbols": symbols, "match": match if symbols else None,
+            "industries": sorted({inds[s] for s in symbols if inds.get(s)}),
             "company": (names.get(symbol) or (title.strip() if feed.startswith("nse") else None)) if symbol else None,
             "industry": ind, "industry_name": BY_ID.get(ind or "", {}).get("name"),
             "published": published.isoformat() if isinstance(published, datetime) else (str(published) if published else None),
@@ -137,6 +148,7 @@ def _item(*, title, summary, url, source, publisher, published, fetched, feed, c
 
 
 FILING_FEEDS = ["nse_announcements", "nse_results"]
+EVENT_FEEDS = ["nse_board_meetings", "nse_corporate_actions"]      # calendar data, shown on the Earnings / Corporate Actions pages
 
 
 _LOAD_CACHE: dict[tuple, tuple[float, list[dict]]] = {}
@@ -170,7 +182,7 @@ def _load_uncached(days: int, symbols: list[str] | None = None, filings: bool | 
         if since is not None:
             stmt = stmt.where((n.published >= since) | (n.published.is_(None) & (n.fetched_at >= since)))
         return db.read_df(stmt.order_by(n.published.desc().nulls_last()).limit(limit))
-    frames = [q(db.select(db.news_items).where(n.feed.notin_(FILING_FEEDS)), 5000)]
+    frames = [q(db.select(db.news_items).where(n.feed.notin_(FILING_FEEDS + EVENT_FEEDS)), 5000)]
     if filings:
         st = db.select(db.news_items).where(n.feed.in_(FILING_FEEDS))
         if symbols:
@@ -180,11 +192,32 @@ def _load_uncached(days: int, symbols: list[str] | None = None, filings: bool | 
         frames.append(q(st, 3000))
     df = pd.concat([f for f in frames if not f.empty], ignore_index=True) if any(not f.empty for f in frames) else frames[0]
     df = df.astype(object).where(df.notna(), None)
-    out = [_item(title=r["title"], summary=r["summary"], url=r["url"], source=r["source"],
-                 publisher=(r["source"] or "").replace(" via Yahoo Finance", "") if r["feed"] == "yahoo_market"
-                 else N.FEEDS.get(r["feed"], {}).get("publisher") if r["feed"].startswith("media_") else None,
-                 published=r["published"], fetched=r["fetched_at"], feed=r["feed"], category=r["category"], symbol=r["symbol"],
-                 names=names, inds=inds) for r in df.to_dict("records")]
+    m = E.matcher()
+
+    def tag(r: dict) -> tuple[list[str] | None, str | None]:
+        """Companies an item is about. Exchange filings: the company the exchange names. Media: companies clearly named
+        in the headline or the publisher's summary (strict matching; ambiguous names are ignored)."""
+        if r["feed"] in FILING_FEEDS or r["feed"] in ("nse_board_meetings", "nse_corporate_actions"):
+            return ([r["symbol"]] if r["symbol"] else []), "Named by the exchange in the filing"
+        if not r["feed"].startswith(("media_", "yahoo")):
+            return [], None
+        in_title = m.find(r["title"])
+        in_sum = [x for x in m.find(r["summary"]) if x.symbol not in {t.symbol for t in in_title}]
+        found = in_title + in_sum
+        if not found:
+            return [], None
+        how = "Named in the headline" if in_title else "Named in the publisher's summary"
+        if all(x.reason == "subsidiary" for x in found):
+            how = f"Through its subsidiary or brand {found[0].alias}"
+        return [x.symbol for x in found], how
+    out = []
+    for r in df.to_dict("records"):
+        syms, how = tag(r)
+        out.append(_item(title=r["title"], summary=r["summary"], url=r["url"], source=r["source"],
+                         publisher=(r["source"] or "").replace(" via Yahoo Finance", "") if r["feed"] == "yahoo_market"
+                         else N.FEEDS.get(r["feed"], {}).get("publisher") if r["feed"].startswith("media_") else None,
+                         published=r["published"], fetched=r["fetched_at"], feed=r["feed"], category=r["category"],
+                         symbol=r["symbol"], names=names, inds=inds, symbols=syms, match=how))
     d = db.disclosures.c
     stmt = db.select(db.disclosures).where(d.category == "News")
     if since is not None:
@@ -193,9 +226,17 @@ def _load_uncached(days: int, symbols: list[str] | None = None, filings: bool | 
         stmt = stmt.where(d.symbol.in_(symbols))
     dd = db.read_df(stmt.order_by(d.date.desc().nulls_last()).limit(3000))
     dd = dd.astype(object).where(dd.notna(), None)
-    out += [_item(title=r["title"], summary=None, url=r["url"], source=f"{r['publisher'] or 'Publisher n/a'} via Yahoo Finance",
-                  publisher=r["publisher"], published=r["date"], fetched=r["fetched_at"], feed="company", category="Company news",
-                  symbol=r["symbol"], names=names, inds=inds) for r in dd.to_dict("records")]
+    for r in dd.to_dict("records"):
+        # Older provider headlines were stored under a company without checking that they name it (e.g. a Microsoft story
+        # under TCS). They are re-checked here; a headline that does not name the company is shown as general news.
+        user = r["data_type"] == "user_entered"
+        ok = user or r["data_type"] == "third_party_matched" or (r["symbol"] and m.mentions(r["symbol"], r["title"]) is not None)
+        how = "Entered by you" if user else ("Named in the headline or the publisher's summary" if ok else None)
+        out.append(_item(title=r["title"], summary=None, url=r["url"],
+                         source=(f"{r['publisher'] or 'Publisher n/a'} via Yahoo Finance" if not user else f"{r['publisher'] or 'User entry'} (entered by you)"),
+                         publisher=r["publisher"], published=r["date"], fetched=r["fetched_at"],
+                         feed="company" if ok else "company_general", category="Company news" if ok else "Indian market",
+                         symbol=r["symbol"] if ok else None, names=names, inds=inds, match=how))
     return out
 
 
@@ -297,9 +338,9 @@ def build_feed(section: str = "top", q: str | None = None, symbol: str | None = 
         section in ("top", "breaking", "company", "announcements", "results", "banking", "sector", "ipo")
     items = _load(window if window else 0, syms if section in ("company", "sector") or symbol or industry else None, filings=needs_filings)
     if symbol:
-        items = [i for i in items if i["symbol"] == symbol]
+        items = [i for i in items if symbol in i["symbols"]]
     elif industry in BY_ID:
-        items = [i for i in items if i["industry"] == industry]
+        items = [i for i in items if industry in i["industries"]]
     hidden = sum(1 for i in items if i["tier"] == "unrated")
     if not include_unrated:
         items = [i for i in items if i["tier"] != "unrated"]
@@ -381,7 +422,7 @@ def related(request: Request, title: str = Query(..., max_length=500), symbol: s
     current_user(request)
     items = [i for i in _load(14, [symbol] if symbol else None) if i["tier"] != "unrated" and i["title"] != title]
     if symbol:
-        items = [i for i in items if i["symbol"] == symbol]
+        items = [i for i in items if symbol in i["symbols"]]
     else:
         w = _words(title) - {"india", "indian", "market", "markets", "stock", "stocks", "shares", "today", "says"}
         items = [i for i in items if len(w & _words(i["title"])) >= 2]

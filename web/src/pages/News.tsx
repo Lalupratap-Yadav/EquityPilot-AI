@@ -10,7 +10,7 @@ import { useDebounced, useInvalidate } from '../lib/hooks'
 
 interface Item {
   id: string; title: string; summary: string | null; url: string | null; source: string; publisher: string | null; tier: string; kind: string
-  category: string; sections: string[]; symbol: string | null; company: string | null; industry: string | null; industry_name: string | null
+  category: string; sections: string[]; symbol: string | null; symbols: string[]; match: string | null; company: string | null; industry: string | null; industry_name: string | null
   published: string | null; fetched_at: string | null; important: boolean; tentative: boolean; also: string[]
 }
 interface Feed { section: string; title: string; items: Item[]; total: number; hidden_unrated: number; sources: string[]; note: string | null; sections: Record<string, string> }
@@ -117,7 +117,9 @@ function NewsRow({ item, saved, onSave }: { item: Item; saved: boolean; onSave: 
         {item.important && <span className="rounded bg-saffron-500/15 px-1.5 py-0.5 font-semibold text-amber-700 dark:text-saffron-400">Important</span>}
         {fresh && <span className="rounded bg-up/10 px-1.5 py-0.5 font-semibold text-up">New</span>}
         {item.tentative && <span className="rounded bg-orange-500/10 px-1.5 py-0.5 font-medium text-orange-700 dark:text-orange-300" title="The headline uses tentative language (may, plans, reportedly…). Treat it as unconfirmed.">Unconfirmed report</span>}
-        {item.symbol && <Link to={`/company/${encodeURIComponent(item.symbol)}`} className="rounded bg-brand-50 px-1.5 py-0.5 font-semibold text-brand-700 hover:underline dark:bg-brand-500/15 dark:text-brand-200">{baseSymbol(item.symbol)}</Link>}
+        {(item.symbols ?? (item.symbol ? [item.symbol] : [])).slice(0, 4).map((sym) => (
+          <Link key={sym} to={`/company/${encodeURIComponent(sym)}`} title={item.match ? `Why this company: ${item.match}` : undefined}
+            className="rounded bg-brand-50 px-1.5 py-0.5 font-semibold text-brand-700 hover:underline dark:bg-brand-500/15 dark:text-brand-200">{baseSymbol(sym)}</Link>))}
         {item.industry_name && <Link to={`/industries/${item.industry}`} className="rounded px-1.5 py-0.5 muted hover:underline">{item.industry_name}</Link>}
       </div>
       {filing && <div className="text-xs font-semibold text-slate-700 dark:text-slate-200">{item.company}</div>}
@@ -128,6 +130,7 @@ function NewsRow({ item, saved, onSave }: { item: Item; saved: boolean; onSave: 
         <span className="font-medium text-slate-600 dark:text-slate-300">{(item.publisher || item.source).replace(' (RSS)', '')}</span>
         <span title={`Published ${ist(item.published)} IST · fetched by EquityPilot ${ist(item.fetched_at)} IST`}>{item.published ? `${ist(item.published)} IST` : 'Publication time not given'}</span>
         {item.also.length > 0 && <span>Also reported by {item.also.slice(0, 3).join(', ')}{item.also.length > 3 ? ` +${item.also.length - 3}` : ''}</span>}
+        {item.match && (item.symbols?.length ?? 0) > 0 && <span title="How EquityPilot linked this item to the company">Company link: {item.match.toLowerCase()}</span>}
         <span className="ml-auto flex items-center gap-1">
           <button className={cx('btn-ghost px-2 py-1 text-xs', open === 'explain' && 'text-brand-600')} onClick={() => setOpen(open === 'explain' ? '' : 'explain')} aria-expanded={open === 'explain'}><Lightbulb className="h-3.5 w-3.5" />What this means</button>
           <button className={cx('btn-ghost px-2 py-1 text-xs', open === 'related' && 'text-brand-600')} onClick={() => setOpen(open === 'related' ? '' : 'related')} aria-expanded={open === 'related'}><Link2 className="h-3.5 w-3.5" />Related</button>

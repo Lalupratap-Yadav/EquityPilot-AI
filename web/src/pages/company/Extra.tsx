@@ -110,7 +110,7 @@ export function DocumentsTab({ symbol, links, sample }: { symbol: string; links:
 }
 
 interface FeedItem { id: string; title: string; summary: string | null; url: string | null; source: string; publisher: string | null; tier: string; category: string
-  company: string | null; published: string | null; important: boolean }
+  company: string | null; published: string | null; important: boolean; match: string | null }
 
 export function CompanyNews({ symbol, compact }: { symbol: string; compact?: boolean }) {
   const q = useQuery({ queryKey: ['newsfeed', 'company', symbol, compact],
@@ -119,13 +119,14 @@ export function CompanyNews({ symbol, compact }: { symbol: string; compact?: boo
   return (
     <Card title={compact ? 'Latest news & filings' : 'News, filings & announcements'} subtitle={compact ? undefined : 'Official filings first; headlines link to the original publisher'}
       action={<Link to={all} className="text-sm font-medium text-brand-600 hover:underline dark:text-brand-300">{compact ? 'All' : 'Open in News'}</Link>}>
-      {q.isLoading ? <Loading /> : (q.data?.items.length ?? 0) === 0 ? <p className="text-sm muted">No news or filings for {baseSymbol(symbol)} in the last 90 days.</p> : (
+      {q.isLoading ? <Loading /> : (q.data?.items.length ?? 0) === 0 ? <p className="text-sm muted">No news or filings for {baseSymbol(symbol)} in the last 90 days. Headlines appear here only when they name the company.</p> : (
         <ul className="space-y-3">{q.data!.items.map((n) => {
           const filing = n.tier === 'primary' && !!n.company
           return (
             <li key={n.id} className="text-sm">
               <div className="flex flex-wrap items-center gap-1.5 text-[11px] muted"><TierBadge tier={n.tier} />{n.category} · {(n.publisher || n.source).replace(' (RSS)', '')} ·
-                <span title={n.published ? `${ist(n.published)} IST` : undefined}>{timeAgo(n.published)}</span>{n.important && <b className="text-amber-700 dark:text-saffron-400">· Important</b>}</div>
+                <span title={n.published ? `${ist(n.published)} IST` : undefined}>{timeAgo(n.published)}</span>{n.important && <b className="text-amber-700 dark:text-saffron-400">· Important</b>}
+                {n.match && !filing && <span title="How EquityPilot linked this headline to the company">· {n.match.toLowerCase()}</span>}</div>
               <a href={n.url ?? '#'} target="_blank" rel="noopener noreferrer" className="hover:underline">{filing ? (n.summary ?? n.title) : n.title} <ExternalLink className="inline h-3 w-3 opacity-60" /></a>
             </li>)
         })}</ul>

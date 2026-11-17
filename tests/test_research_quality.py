@@ -126,7 +126,8 @@ def test_source_tiers(source, data_type, expected):
 def test_unrated_headlines_hidden_by_default(client):
     now = db.utcnow()
     db.upsert(db.disclosures, [
-        {"symbol": "SAMPLE-BETA", "date": now, "title": "Is this a multibagger? Tip site says yes", "category": "News",
+        # (v2.6: a provider headline is company news only if it names the company, so the tip headline names it)
+        {"symbol": "SAMPLE-BETA", "date": now, "title": "Is Beta Infotech a multibagger? Tip site says yes", "category": "News",
          "publisher": "Random Stock Tips", "url": "https://example.com/tip", "source": "Yahoo Finance news aggregator",
          "data_type": "third_party", "fetched_at": now},
         {"symbol": "SAMPLE-BETA", "date": now, "title": "Beta Infotech wins contract", "category": "News",
@@ -136,7 +137,7 @@ def test_unrated_headlines_hidden_by_default(client):
     r = client.get("/api/news?section=company&symbol=SAMPLE-BETA").json()
     titles = {i["title"]: i["tier"] for i in r["items"]}
     assert "Beta Infotech wins contract" in titles and titles["Beta Infotech wins contract"] == "established"
-    assert "Is this a multibagger? Tip site says yes" not in titles and r["hidden_unrated"] >= 1
+    assert "Is Beta Infotech a multibagger? Tip site says yes" not in titles and r["hidden_unrated"] >= 1
     r2 = client.get("/api/news?section=company&symbol=SAMPLE-BETA&include_unrated=true").json()
     assert any(i["tier"] == "unrated" for i in r2["items"])
     # the assistant's evidence never includes unrated publishers

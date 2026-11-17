@@ -283,6 +283,10 @@ def delete_bank_metrics(symbol: str, period: str) -> None:
 
 # ------------------------------------------------------------------ news & disclosures
 def refresh_news(symbol: str) -> tuple[bool, str]:
+    """Fetch the provider's headlines for a company. Yahoo's per-company stream is loosely matched (it can carry stories
+    about other companies or the whole sector), so a headline is attached to the company only when the company is
+    clearly named in its title or the publisher's summary (see data/entities.py). Every other headline is kept as
+    general market news, never attached to the company."""
     if symbol.startswith("SAMPLE-"):
         return True, "Sample company - no real news exists."
     try:
@@ -291,15 +295,41 @@ def refresh_news(symbol: str) -> tuple[bool, str]:
         return False, str(exc)
     if not rows:
         return True, "The provider returned no recent headlines."
-    db.upsert(db.disclosures, [{k: v for k, v in r.items() if k != "summary"} for r in rows], ["symbol", "title", "url"])
-    return True, f"{len(rows)} headlines fetched."
+    from . import entities
+    m = entities.matcher(need=symbol)
+    matched, general = [], []
+    for r in rows:
+        (matched if m.mentions(symbol, r["title"], r.get("summary")) else general).append(r)
+    if matched:
+        db.upsert(db.disclosures, [{**{k: v for k, v in r.items() if k != "summary"}, "data_type": "third_party_matched"}
+                                   for r in matched], ["symbol", "title", "url"])
+    if general:
+        db.upsert(db.news_items, [{"feed": "yahoo_market", "category": "Indian market", "title": r["title"][:500],
+                                   "summary": r.get("summary"), "url": r["url"], "published": r["date"],
+                                   "source": f"{r['publisher'] or 'Publisher n/a'} via Yahoo Finance", "symbol": None,
+                                   "fetched_at": r["fetched_at"]} for r in general], ["feed", "url", "title"])
+    return True, (f"{len(matched)} headlines name the company; {len(general)} other headlines from the provider's stream "
+                  "were filed as general market news.")
 
 
-def get_disclosures(symbol: str | None = None, limit: int = 200) -> pd.DataFrame:
+def headline_is_verified(symbol: str | None, title: str, category: str | None, data_type: str | None) -> bool:
+    """True unless the row is an older third-party headline that does not name the company."""
+    if category != "News" or data_type in ("third_party_matched", "user_entered") or not symbol:
+        return True
+    from . import entities
+    return entities.matcher().mentions(symbol, title) is not None
+
+
+def get_disclosures(symbol: str | None = None, limit: int = 200, verified: bool = True) -> pd.DataFrame:
+    """Company headlines and disclosures. With `verified` (the default) third-party headlines that do not name the
+    company are left out, so they can never be presented as that company's news."""
     stmt = db.select(db.disclosures)
     if symbol:
         stmt = stmt.where(db.disclosures.c.symbol == symbol)
     df = db.read_df(stmt.order_by(db.disclosures.c.date.desc()).limit(limit))
+    if not df.empty and verified:
+        keep = [headline_is_verified(sy, t, c, dt) for sy, t, c, dt in zip(df["symbol"], df["title"], df["category"], df["data_type"])]
+        df = df[keep].reset_index(drop=True)
     if not df.empty:
         df["date"] = pd.to_datetime(df["date"])
     return df
