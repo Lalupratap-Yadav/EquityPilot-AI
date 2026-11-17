@@ -288,6 +288,7 @@ def quality_checks(fd: FinancialData) -> list[dict]:
         if pd.notna(r) and pd.notna(gp) and pd.notna(cogs) and abs(r - cogs - gp) > 0.02 * abs(r):
             issues.append({"level": "info", "check": f"Gross profit ≠ revenue - cost of revenue ({lbl})",
                            "detail": "The provider's gross profit definition may differ from a simple subtraction."})
+    issues += eps_checks(fd)
     key_items = ["revenue", "net_income", "total_assets", "total_equity", "cfo", "total_debt", "cash", "ebit"]
     missing = [k for k in key_items if g(k).isna().all()]
     if missing:
@@ -314,6 +315,33 @@ def quality_checks(fd: FinancialData) -> list[dict]:
         issues.append({"level": "info", "check": "Short history",
                        "detail": f"Only {len(fd.periods)} period(s) available - growth rates and averages are less reliable."})
     return issues
+
+
+def eps_checks(fd: FinancialData) -> list[dict]:
+    """EPS consistency: diluted EPS should not exceed basic EPS when profit is positive, and reported EPS should be close
+    to net profit / diluted shares. Differences usually come from bonus/split restatements or minority interests; the
+    figures are shown as reported and flagged, never altered."""
+    out: list[dict] = []
+    if fd.empty:
+        return out
+    g = fd.get
+    basic, dil, ni, sh = g("eps_basic"), g("eps_diluted"), g("net_income"), g("shares_diluted")
+    for p in fd.periods:
+        lbl = pd.Timestamp(p).strftime("%b %Y")
+        b_, d_, n_, s_ = basic[p], dil[p], ni[p], sh[p]
+        if pd.notna(b_) and pd.notna(d_) and b_ > 0 and d_ > b_ * 1.01:
+            out.append({"level": "warning", "check": f"Diluted EPS above basic EPS ({lbl})",
+                        "detail": f"Basic {b_:,.2f} vs diluted {d_:,.2f}. Diluted EPS cannot normally exceed basic EPS; the provider "
+                                  "may have restated one of them for a bonus issue or split. Verify with the annual report."})
+        if pd.notna(d_) and pd.notna(n_) and pd.notna(s_) and s_ > 0 and n_ > 0 and d_ > 0:
+            implied = n_ / s_
+            gap = d_ / implied - 1
+            if abs(gap) > 0.10:
+                out.append({"level": "info", "check": f"EPS differs from net profit / shares ({lbl})",
+                            "detail": f"Reported diluted EPS {d_:,.2f} vs {implied:,.2f} from net profit / diluted shares ({gap:+.0%}). "
+                                      "Common causes: profit attributable to minority shareholders, or a share count restated "
+                                      "for a later bonus or split. EPS-based ratios use the reported figure."})
+    return out
 
 
 def _qoq(s: pd.Series) -> pd.Series:

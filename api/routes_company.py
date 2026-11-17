@@ -1,7 +1,7 @@
 """Search, company profile, financials, valuation (incl. DCF lab), technicals, risk, peers, bank metrics, notes."""
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+from dataclasses import asdict
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
@@ -21,7 +21,7 @@ from equitypilot.data import marketdata as M
 from equitypilot.data import repository as repo
 from equitypilot.data import securities as S
 from equitypilot.data.official import official_links
-from equitypilot.data.schema import LINE_ITEMS, STATEMENTS, items_for, label
+from equitypilot.data.schema import STATEMENTS, items_for, label
 from equitypilot.data.universe import is_valid_symbol, normalise_symbol
 
 from .core import LIMITER, clean, current_user, not_found
@@ -126,6 +126,24 @@ def financials(symbol: str, period: str = "annual", basis: str | None = None):
     })
 
 
+@router.get("/companies/{symbol}/health")
+def health(symbol: str, request: Request):
+    """Financial Health dashboard: seven areas, each with its metrics, formulas and documented rating rules."""
+    current_user(request)
+    _company_or_404(symbol)
+    from equitypilot.analytics import health as H
+    return clean(H.health(symbol))
+
+
+@router.get("/companies/{symbol}/coverage")
+def coverage(symbol: str, request: Request):
+    """Which datasets EquityPilot holds for this company, their source label, period, freshness and gaps."""
+    uid = current_user(request)
+    _company_or_404(symbol)
+    from equitypilot.data import quality as Q
+    return clean(Q.company_coverage(symbol, uid))
+
+
 @router.get("/companies/{symbol}/quarterly")
 def quarterly(symbol: str):
     _company_or_404(symbol)
@@ -151,17 +169,7 @@ def valuation(symbol: str, request: Request):
     fq = repo.get_financials(symbol, "quarterly", basis=fd.basis if not fd.empty else None, auto_refresh=False)
     snap = V.market_snapshot(quote, fd, fq)
     base, notes = V.default_dcf_inputs(fd, quote)
-    hist = []
-    px = repo.get_prices(symbol, auto_refresh=False)
-    if not fd.empty and not px.empty:
-        for p in fd.periods:
-            before = px[px["date"] <= pd.Timestamp(p)]
-            if before.empty or (pd.Timestamp(p) - before["date"].iloc[-1]).days > 10:
-                continue
-            close = float(before["close"].iloc[-1])
-            eps, sh, bv = fd.get("eps_diluted")[p], fd.get("shares_outstanding")[p], fd.get("total_equity")[p]
-            hist.append({"label": F.fiscal_label(p), "price": close, "pe": close / eps if eps and eps > 0 else None,
-                         "pb": close * sh / bv if sh and bv and bv > 0 else None})
+    hist = V.multiple_history(fd, repo.get_prices(symbol, auto_refresh=False))
     peers = repo.get_peers(symbol)
     pm = pd.DataFrame([company_metrics(p) for p in peers]) if peers else pd.DataFrame()
     rel = V.peer_relative(snap, pm) if not pm.empty else pd.DataFrame()

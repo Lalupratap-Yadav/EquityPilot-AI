@@ -380,6 +380,24 @@ def default_fcfe_extras(fd: FinancialData) -> tuple[dict, dict[str, str]]:
 
 
 # ------------------------------------------------------------------ history & margin of safety
+def multiple_history(fd: FinancialData, px: pd.DataFrame) -> list[dict]:
+    """Fiscal-year-end P/E and P/B from the closing price within 10 days before each year-end (None when earnings or
+    book value were not positive)."""
+    from ..formatting import fiscal_label
+    hist: list[dict] = []
+    if fd.empty or px is None or px.empty:
+        return hist
+    for p in fd.periods:
+        before = px[px["date"] <= pd.Timestamp(p)]
+        if before.empty or (pd.Timestamp(p) - before["date"].iloc[-1]).days > 10:
+            continue
+        close = float(before["close"].iloc[-1])
+        eps, sh, bv = fd.get("eps_diluted")[p], fd.get("shares_outstanding")[p], fd.get("total_equity")[p]
+        hist.append({"label": fiscal_label(p), "price": close, "pe": close / eps if eps and eps > 0 else None,
+                     "pb": close * sh / bv if sh and bv and bv > 0 else None})
+    return hist
+
+
 def multiple_bands(history: list[dict], current: dict) -> dict:
     """Median / min / max of fiscal-year-end P/E and P/B versus today's multiple.
     `history` rows carry pe/pb (None when earnings or book value were negative)."""

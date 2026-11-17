@@ -369,6 +369,15 @@ def learn_progress(body: QuizResult, request: Request):
     return prog
 
 
+@router.get("/data/quality")
+def data_quality(request: Request):
+    """Data Quality & Source Transparency: feed status, market-data provider, statement coverage and EPS checks."""
+    current_user(request)
+    LIMITER.check(request, "quality", 30, 60)
+    from equitypilot.data import quality as Q
+    return clean(Q.platform_quality())
+
+
 @router.get("/data/sources")
 def data_sources(request: Request):
     current_user(request)
