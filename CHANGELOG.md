@@ -1,5 +1,58 @@
 # Changelog
 
+## [2.6.0] – 15 Nov 2026 – Accuracy, official events and transparency
+### Fixed
+- **Wrong company news (the Microsoft story under TCS).** Yahoo's per-company headline stream carries stories about other
+  companies and the whole sector. A headline is now attached to a company only when the company is clearly named in the
+  headline or the publisher's summary (new `equitypilot/data/entities.py`):
+  - group words never match on their own ("Tata", "Reliance", "HDFC", "Bajaj", "Mahindra", "Adani", ...);
+  - foreign parents never stand in for the Indian company ("Nestle", "Suzuki", "Unilever", "Colgate", "Vodafone");
+  - the longest name wins and other listed entities block shorter matches ("Tech Mahindra" is not M&M, "HDFC Life" is not
+    HDFC Bank, "ITC Hotels" is not ITC, "Bajaj Housing Finance" is not Bajaj Finance, "SBI Capital" is not SBI);
+  - subsidiaries count only where the relationship is public record (Jio Platforms and Reliance Retail → Reliance Industries,
+    Novelis → Hindalco, Royal Enfield → Eicher Motors), and the item says it was matched through the subsidiary.
+  Headlines that do not name the company are kept as general market news. Older stored headlines are re-checked the same
+  way, and the AI assistant and PDF reports see only verified company headlines.
+- **Virtual Invest and splits.** The data provider restates history for every later split (bonus issues appear as splits):
+  - dividends paid before a split were credited at the restated, smaller amount (verified on TCS: Yahoo lists ₹0.375 for
+    the ₹3 dividend actually paid in 2004); they are now converted back to the amount paid on the day;
+  - the performance chart valued pre-split holdings at split-adjusted prices, and could count a split twice when the price
+    history had not caught up yet; each day's price is now expressed in that day's share units.
+- **Search.** An exact symbol could be cut off when hundreds of names contained it ("TRU"); exact symbol, ISIN and
+  name-prefix matches are now fetched first. Companies listed twice under an old and new ISIN (after a split) are merged,
+  preferring the NSE listing. Matches inside another word no longer pad the list ("tcs" no longer shows West Coast
+  Paper). Typo matching runs only when nothing matches. Common short names work ("l&t", "hul", "ril", "sbi").
+- The Virtual Invest leaderboard no longer shows how many stocks a user holds - only the chosen display name and return.
+- Prompts that asked why you are watching a company or what your thesis is were reworded (privacy).
+
+### Added
+- **Earnings & Results** (`/earnings`): confirmed result dates from companies' board-meeting intimations (NSE board-meetings
+  feed and announcements, merged per meeting), results as they are filed ("Outcome of board meeting", delay notices shown
+  separately), list and calendar views, company / sector / tracked filters, and each company's quarterly history with
+  QoQ and YoY growth. Dates are never estimated; no earnings surprise is shown because no estimate source is connected.
+- **Corporate Actions** (`/corporate-actions`): dividends, splits, bonus, rights, buybacks and schemes from the NSE
+  corporate-actions feed with exchange ex-date and record date (payment dates are not in the feed and are never guessed),
+  board announcements whose dates are still to come, a company dividend/split history (provider data, labelled
+  THIRD-PARTY), and plain-English explanations.
+- **Data Quality & Sources** (`/data-quality`): status of every feed (label, refresh interval, last success, failures,
+  items kept), market-data provider and quote freshness, statement coverage, EPS consistency warnings, the label glossary
+  (OFFICIAL, SECONDARY, THIRD-PARTY, DELAYED, HISTORICAL, CALCULATED, ASSUMPTION, SAMPLE, USER-ENTERED) and a per-company
+  coverage table. Company pages show a "Data coverage n/m" link.
+- **EPS consistency checks** in the statement quality checks: diluted EPS above basic EPS, and reported EPS far from net
+  profit / diluted shares. It flags the known HDFC Bank FY2023 issue.
+- **Financial Health** tab on company pages: growth, profitability, debt, liquidity, cash flow, capital efficiency and
+  valuation context, each with its metrics, formulas, period and documented rating rule. Banks and NBFCs use asset
+  quality, capital and funding instead. Missing data shows "Insufficient data"; there is no overall score.
+- Global search lists the new pages as research tools.
+- **Frontend interaction tests** (Vitest + Testing Library, 19 tests; `npm test` in `web/`).
+- 39 backend tests (`tests/test_trust_v26.py`): company identification with misleading headlines, earnings and actions
+  parsing, health, coverage, quality, split accounting, search ranking and cross-user privacy.
+
+### Changed
+- Endpoints: `/api/events/results`, `/api/events/actions`, `/api/events/company/{symbol}`, `/api/data/quality`,
+  `/api/companies/{symbol}/health`, `/api/companies/{symbol}/coverage`.
+- Faster: Data Quality 8 s → 0.3 s (one query instead of one per company), company search 80-170 ms → 12-65 ms.
+
 ## [2.5.2] – 15 Nov 2026 – Premium visual refresh
 Visual changes only. No new sections, and no changes to data, calculations or behaviour.
 

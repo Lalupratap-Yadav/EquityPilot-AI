@@ -1,4 +1,73 @@
-# EquityPilot AI – Test Report (v2.5.2, 15 Nov 2026)
+# EquityPilot AI – Test Report (v2.6.0, 15 Nov 2026)
+
+Run on 15 Nov 2026 (a Sunday, market closed) on Windows 11. "Live" means the running server on `localhost:8000` with the
+real NSE, RBI, SEBI, BSE, publisher RSS and Yahoo Finance data collected since 11-12 Nov 2026. Automated tests run offline.
+
+## 1. Automated checks
+
+| Check | Result |
+|---|---|
+| `python -m pytest -q` (offline, temporary database) | **277 passed, 0 failed** |
+| of which new in `tests/test_trust_v26.py` | 39: 24 misleading-headline cases, company news API, provider headline split, results calendar, corporate actions, health, EPS checks, coverage, data quality, split accounting, leaderboard, search ranking, new search tools, cross-user privacy |
+| `npm test` (Vitest + Testing Library, jsdom, fake API) | **19 passed** in 5 files |
+| `npx tsc -b` | Passed |
+| `npm run build` | Passed |
+| `npx oxlint src tests` | 0 errors, 21 warnings (20 in files this release did not change, 1 in the test helper) |
+| `ruff check api equitypilot tests --select F,E9` | Clean (3 unused imports removed) |
+
+Changed existing tests, with the reason:
+- `test_api.py::test_paper_split_and_dividend_adjustments` now expects 100 instead of 50: a dividend paid before a 2:1 split is
+  restated by the provider at half the amount paid (checked on TCS history: 0.375 x 8 = the Rs 3 paid in 2004).
+- `test_research_quality.py::test_unrated_headlines_hidden_by_default`: the sample "tip site" headline now names the company,
+  because a headline that does not name the company is no longer company news at all.
+- `test_live_ai.py`: version 2.6.0.
+
+Negative check: with the split handling switched off, `test_performance_has_no_jump_on_a_split` fails (an 80% false jump on
+the split day), so the test does detect the old behaviour.
+
+## 2. Company identification in news (live data)
+
+| Check | Result |
+|---|---|
+| TCS company news | Only stories naming TCS (2 in the last 14 days). The Microsoft/H-1B, Infosys and Rezolve AI stories from Yahoo's TCS stream are now general market news |
+| Media RSS tagging | 218 of 1,125 publisher stories linked to tracked companies. A sample of 18 was reviewed by hand: 1 false link found ("ITC (HS) code" in a DGFT notice) and fixed; a later page review found "SBI Capital" (adviser) linked to SBI, also fixed |
+| Speed | About 13 microseconds per headline; 5,000 headlines in 0.06 s |
+
+## 3. Search across the full securities master (live database)
+
+Every security with an NSE symbol (2,418) searched twice, by symbol and by full name; the right company must be first.
+
+| | Before | After |
+|---|---|---|
+| By NSE symbol | 99.50% (12 misses) | **99.96%** (1 miss: KALYANI is two different companies on NSE and BSE) |
+| By company name | 99.71% (7 misses) | **99.92%** (2 misses: DVR share classes with the same company name) |
+| Time per search | 80-170 ms | 12-65 ms |
+
+## 4. New pages (live server)
+
+| Page | Live result |
+|---|---|
+| Earnings & Results | 13 confirmed upcoming result dates, 1,150 results filings since 12 Nov 2026; board-meeting feed and announcement merged per meeting; delay notices shown separately |
+| Corporate Actions | 16 upcoming actions (14 dividends, 1 split, 1 buyback); split terms parsed ("Face value Rs 10 to Re 1, each share becomes 10"); interest payments on debt excluded |
+| Data Quality | 20 of 20 feeds fresh; 120 of 120 tracked companies with 3+ years of statements; 1 EPS warning (HDFC Bank, Mar 2023: diluted 88.68 above basic 44.51), the issue already noted by hand in v2.5.1 |
+| Financial Health | TCS: 6 of 6 areas rated; HDFC Bank: bank framework, asset quality / capital / funding "Insufficient data" until bank metrics are entered, debt and cash flow "Not applicable" |
+| Endpoint timings (warm) | results 0.04-0.14 s, actions 0.3 s, health 0.4 s, data quality 0.3 s (first call after a restart about 3 s) |
+
+Screenshots in headless Edge: Earnings (list, calendar, recently filed, company history), Corporate Actions (upcoming, company
+history), Data Quality, Health (TCS, HDFC Bank) and News at 1440 px light; Earnings, Corporate Actions, Health and Data Quality at
+390 px; Health and the Earnings calendar in dark mode. No horizontal page overflow and no "NaN" or "undefined" text on any of them.
+
+## 5. Not tested
+
+- Zerodha Kite Connect against the real API (needs your Kite Connect app and daily token).
+- The Claude research agent against the paid API (needs your key).
+- The Dockerfile (Docker is not installed here) and PostgreSQL (no test server).
+- Behaviour during a live trading session (tested on a Sunday).
+- Browser end-to-end tests: the frontend tests run in jsdom against a fake API; the live pages were checked with screenshots.
+
+---
+
+# Test Report (v2.5.2, 15 Nov 2026)
 
 ## 0. Premium visual refresh (v2.5.2, 15 Nov 2026)
 

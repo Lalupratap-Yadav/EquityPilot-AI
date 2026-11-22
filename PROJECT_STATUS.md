@@ -1,5 +1,20 @@
 # EquityPilot AI – Project Status
 
+## v2.6 ACCURACY, OFFICIAL EVENTS, TRANSPARENCY – complete (15 Nov 2026)
+| Item | State |
+|---|---|
+| Company identification in news (fixes the Microsoft story under TCS); media RSS stories tagged to the companies they name | ✅ 24 misleading-headline cases + API tests; live: TCS company news shows only stories naming TCS |
+| Earnings & Results page (confirmed dates from NSE board-meeting filings, results filed, calendar, company history) | ✅ tests; live: 13 upcoming dates, 1,150 results filings collected since 12 Nov 2026 |
+| Corporate Actions page (exchange ex-/record dates, announcements, explanations, company history) | ✅ tests; live: 16 upcoming actions |
+| Data Quality & Sources page, company data-coverage view, EPS consistency checks | ✅ tests; live: flags exactly the known HDFC Bank EPS issue |
+| Financial Health tab (seven areas, documented rules, bank framework, no overall score) | ✅ tests; live check on TCS and HDFC Bank |
+| Virtual Invest: split-restated dividends and split-day valuation fixed; leaderboard shows no position count | ✅ tests (the split test fails on the old code) |
+| Search: exact symbols never lost, ISIN-change duplicates merged, no mid-word padding, short names | ✅ full securities master: 99.96% symbol / 99.92% name top-1 |
+| Frontend interaction tests (Vitest + Testing Library) | ✅ 19 tests |
+| Live Kite Connect, paid Claude API, Docker build, PostgreSQL, a live trading session | ❌ not tested (need your credentials / tools / a market day) |
+
+Details: [TEST_REPORT.md](TEST_REPORT.md), [CHANGELOG.md](CHANGELOG.md).
+
 ## v2.5 PREMIUM UI, SEARCH, NEWS – complete (13 Nov 2026)
 | Item | State |
 |---|---|

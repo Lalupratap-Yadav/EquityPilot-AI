@@ -12,10 +12,13 @@
 - [ ] Observe the in-session behaviour on a live trading day: 20 s refresh, price flashes, Breaking news.
 - [ ] Run the Claude research agent against the paid API with your key.
 - [ ] Reduce the ~1 minute slow period after a server restart (the warm-up competes for CPU); for example, move the warm-up into a separate worker process.
-- [ ] Better company tagging of media headlines (Yahoo's per-company headlines are loosely matched; publisher RSS items are not tagged to companies yet).
+- [x] Better company tagging of media headlines (v2.6: strict company matching for Yahoo and publisher RSS items).
+- [ ] Extend the curated company aliases when new companies are tracked (new companies match on their full name and NSE symbol only).
+- [ ] Observe the Earnings & Results and Corporate Actions pages over a full results season: the NSE feeds are rolling, so history builds up only while EquityPilot runs.
 - [ ] Build and run the Dockerfile on a machine with Docker installed.
 - [ ] Test `EQUITYPILOT_DATABASE_URL` against a real PostgreSQL server.
-- [ ] Add frontend unit/interaction tests (e.g. Vitest + Testing Library or Playwright). Currently the frontend has only a type-check, a build and screenshot checks.
+- [x] Frontend interaction tests (v2.6: Vitest + Testing Library, `npm test`). Browser end-to-end tests (Playwright) are not added.
+- [ ] Decide whether to keep or remove the company "My notes" tab, watchlist item notes and the Reports "thesis" field (privacy review, v2.6).
 
 ## Completed in v2.1 (see CHANGELOG.md)
 - [x] Valuation summary, FCFE, margin of safety and historical multiple bands
@@ -26,6 +29,8 @@
 - [ ] Company investor-relations websites as a news source (needs a per-company list of IR pages / RSS feeds).
 - [ ] Ministry of Finance / PIB English feed (the PIB RSS tested returned Hindi items for the region tried).
 - [ ] Revenue segments and product mix: no free licensed source. This could be added as a user-entered table from the annual report, like shareholding.
+- [ ] Earnings surprises: need a licensed analyst-estimate source (none connected, so none are shown).
+- [ ] Payment dates for dividends: not in the NSE corporate-actions feed; would need parsing of each company's filing PDF.
 - [ ] Historical shareholding trend chart in Compare (needs several quarters entered).
 
 ## Completed in v2 (see CHANGELOG.md)

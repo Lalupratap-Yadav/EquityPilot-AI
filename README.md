@@ -4,7 +4,8 @@
 
 EquityPilot AI is an Indian equity research platform. It covers:
 - discovering companies and following markets, industries and news
-- financial analysis, valuation and screening
+- financial analysis, valuation, a rule-based financial health check and screening
+- an earnings & results calendar and a corporate actions centre built from official exchange filings
 - a source-grounded AI research assistant that can also answer questions about your own PDFs
 - PDF research reports, portfolio analytics and a learning centre
 - **Virtual Invest**, a paper-trading simulator with ₹10,00,000 of virtual money
@@ -19,15 +20,16 @@ It applies equity-research practice from the NISM Series XV (Research Analyst) c
 
 | Area | Pages and features |
 |---|---|
-| **Discover** | **Home**: indices, market movers, sector heat map, watchlist, recently viewed and Virtual Invest snapshot.<br>**Explore**: themed collections, AMFI large/mid/small-cap rows and trending companies.<br>**Industry Intelligence Centre**: 15 industries, each with drivers, risks, government policy and regulators (with official links), valuation approach, industry-specific metrics and recent filings.<br>**Market Tracker**: price charts in two modes. Simple shows one clean line with a soft gradient fill, a hover readout and a labelled reference line. Advanced adds candles, moving averages, Bollinger bands, RSI and MACD. Ranges run from 1 day to all time, each line is explained in plain English, and quotes stream live. |
-| **Research** | **Company pages**: overview, chart, statements, quarterly results, ratios, technicals, risk flags, peers, shareholding, bank metrics, news and notes.<br>**Equity Research** workspace.<br>**Valuation Lab**: an estimated-value range across methods, FCFF and FCFE DCF, margin of safety, scenarios, sensitivity, reverse DCF, historical P/E and P/B bands, peer multiples and justified P/B.<br>**Plain-English explanations**: click any ratio to see what it means, why it matters, how to read it, a worked example and its history. Ratings are applied only where a fair benchmark exists.<br>**Screener** with saved screens, and **Compare** for 2–5 companies.<br>**News & Market Intelligence**: NSE filings and results, RBI, SEBI and global markets.<br>**AI Assistant**, **Documents** (PDF question-answering with page citations) and **Reports** (PDF). |
+| **Discover** | **Home**: indices, market movers, sector heat map, watchlist, recently viewed and Virtual Invest snapshot.<br>**Explore**: themed collections, AMFI large/mid/small-cap rows and trending companies.<br>**Industry Intelligence Centre**: 15 industries, each with drivers, risks, government policy and regulators (with official links), valuation approach, industry-specific metrics and recent filings.<br>**Market Tracker**: price charts in two modes. Simple shows one clean line with a soft gradient fill, a hover readout and a labelled reference line. Advanced adds candles, moving averages, Bollinger bands, RSI and MACD. Ranges run from 1 day to all time, each line is explained in plain English, and quotes stream live.<br>**Earnings & Results**: confirmed result dates from companies' board-meeting filings with NSE (list and calendar), results as they are filed, and each company's quarterly history. Nothing is estimated.<br>**Corporate Actions**: dividends, splits, bonus issues, rights, buybacks and schemes with the exchange's ex-date and record date, plus plain-English explanations. |
+| **Research** | **Company pages**: overview, chart, statements, a **Financial Health** check (seven areas, each with its metrics, formulas and rating rule; bank-specific for banks), quarterly results, ratios, technicals, risk flags, peers, shareholding, bank metrics, news, documents and a data-coverage view.<br>**Equity Research** workspace.<br>**Valuation Lab**: an estimated-value range across methods, FCFF and FCFE DCF, margin of safety, scenarios, sensitivity, reverse DCF, historical P/E and P/B bands, peer multiples and justified P/B.<br>**Plain-English explanations**: click any ratio to see what it means, why it matters, how to read it, a worked example and its history. Ratings are applied only where a fair benchmark exists.<br>**Screener** with saved screens, and **Compare** for 2–5 companies.<br>**News & Market Intelligence**: NSE filings and results, RBI, SEBI and global markets.<br>**AI Assistant**, **Documents** (PDF question-answering with page citations) and **Reports** (PDF). |
 | **My space** | **Watchlists**: several lists, with notes and price alerts that raise notifications.<br>**Portfolio**: value, XIRR, allocation, risk and correlation.<br>**Virtual Invest**: practice orders, P&L, allocation, performance vs NIFTY 50, achievements, an opt-in leaderboard and reset. |
-| **Learn** | **Learning Centre**: 8 modules with quizzes and saved progress, plus a glossary.<br>**How to Use** guide.<br>**Settings**: account, theme, AI engine and costs, data sources, and export of your data. |
+| **Learn** | **Learning Centre**: 8 modules with quizzes and saved progress, plus a glossary.<br>**How to Use** guide.<br>**Data Quality**: status and freshness of every source, label glossary, EPS consistency warnings and per-company coverage.<br>**Settings**: account, theme, AI engine and costs, data sources, and export of your data. |
 
 **Global search** (`Ctrl+K` or `/`) finds companies (5,552 listed securities), indices, sectors, financial concepts, research tools and news in one box. It is typo tolerant ("Adani Enterprwses"), knows everyday names (SBI, L&T, HUL), previews price and market cap, and keeps recent searches. Opening a company that isn't tracked yet fetches its data on demand.
 
 **News & Market Intelligence** has 13 sections, from Top and Breaking (under 3 hours old only) to Commodities & currency and IPOs.
 - **Sources:** official NSE, BSE, RBI and SEBI feeds first, then established publishers (The Economic Times, Mint, Business Standard and Reuters via Yahoo), each labelled.
+- **Company matching:** a story is linked to a company only when the exchange names it or the company is clearly named in the headline or summary. Group names ("Tata", "HDFC"), foreign parents ("Nestle") and similar names ("HDFC Life" vs "HDFC Bank") are handled; every link says how it was made, and anything uncertain stays general market news.
 - **Tools:** stories are de-duplicated across publishers; filters by company, sector, source and date; saved articles and related news.
 - **Summary and explanations:** a fact-only daily market summary, and "What this means" explanations that separate confirmed filings from media reports.
 
@@ -42,13 +44,13 @@ A **Simple / Advanced** switch in the header changes how much detail every page 
 ## Data integrity
 
 1. **Nothing is invented.** Every figure comes from a named source or a calculation shown on screen. Missing data shows as "—".
-2. **Every number is labelled:** `DELAYED` · `LAST CLOSE` · `HISTORICAL` · `THIRD-PARTY` · `OFFICIAL (UPLOADED)` · `USER-ENTERED` · `CALCULATED` · `ASSUMPTION` · `SAMPLE`. Each label comes with the source, period, statement basis and retrieval time in IST.
+2. **Every number is labelled:** `OFFICIAL` · `SECONDARY` · `THIRD-PARTY` · `DELAYED` · `LAST CLOSE` · `HISTORICAL` · `OFFICIAL (UPLOADED)` · `USER-ENTERED` · `CALCULATED` · `ASSUMPTION` · `SAMPLE`. The Data Quality page lists them all. Each label comes with the source, period, statement basis and retrieval time in IST.
 3. **Every headline carries a source label.** `OFFICIAL` means an exchange, regulator or government source. `SECONDARY` means an established news organisation; check material facts against the filing. Headlines from other publishers (tip sites, blogs, aggregators) are hidden by default and never used as evidence by the AI assistant.
 4. **Only legitimate sources** (all verified in [docs/AUDIT.md](docs/AUDIT.md)):
 
    | Source | Used for |
    |---|---|
-   | NSE public RSS feeds | Announcements and results, with links to the filings |
+   | NSE public RSS feeds | Announcements, results, board meetings (result dates) and corporate actions (ex-dates), with links to the filings |
    | NSE `EQUITY_L.csv` | Listed securities |
    | AMFI market-cap list | Official large/mid/small-cap categories |
    | RBI and SEBI RSS | Regulatory and economic updates |
@@ -121,8 +123,9 @@ docker run -p 8000:8000 -v equitypilot-data:/app/data equitypilot
 ### Tests
 
 ```bash
-python -m pytest -q          # offline, temporary database
+python -m pytest -q          # offline, temporary database (277 tests)
 cd web && npx tsc -b         # TypeScript type-check
+cd web && npm test           # frontend interaction tests (Vitest + Testing Library, 19 tests)
 ```
 
 The suite covers:
@@ -135,6 +138,12 @@ The suite covers:
   - Virtual Invest rules: no overspending or overselling, plus split and dividend adjustment
   - alerts, DCF, bank metrics, shareholding entry and document question-answering
   - the refusal to give recommendations, plus security headers and input validation
+- Company identification in news with misleading headlines, earnings and corporate-action parsing, financial health,
+  data coverage, split and dividend accounting, search ranking across the securities master, and cross-user privacy
+  (holdings, trades, saved articles, alerts, portfolio).
+- Frontend interaction tests for search and keyboard navigation, desktop and phone navigation, the Earnings, Corporate
+  Actions, Data Quality and Health views, news company links and filters, Virtual Invest order checks and error states.
+  They use a fake API, so they test the interface, not live data.
 
 ### Command-line refresh
 

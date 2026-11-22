@@ -3,7 +3,7 @@ Offline: providers, the network and the Anthropic client are replaced by fakes."
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -151,7 +151,7 @@ def test_websocket_sends_snapshot_then_only_changes(client, monkeypatch):
 
 def test_health_reports_market_data_provider(client):
     h = client.get("/api/health").json()
-    assert h["version"] == "2.5.2" and h["market_data"]["realtime"] is False and "provider" in h["market_data"]
+    assert h["version"] == "2.6.0" and h["market_data"]["realtime"] is False and "provider" in h["market_data"]
 
 
 # ------------------------------------------------------------------ research agent: free offline router
