@@ -15,6 +15,9 @@ const pages = {
   Screener: lazy(() => import('./pages/Screener')),
   Compare: lazy(() => import('./pages/Compare')),
   News: lazy(() => import('./pages/News')),
+  Earnings: lazy(() => import('./pages/Earnings')),
+  CorporateActions: lazy(() => import('./pages/CorporateActions')),
+  DataQuality: lazy(() => import('./pages/DataQuality')),
   Assistant: lazy(() => import('./pages/Assistant')),
   Reports: lazy(() => import('./pages/Reports')),
   Watchlists: lazy(() => import('./pages/Watchlists')),
@@ -48,6 +51,9 @@ export default function App() {
           <Route path="screener" element={<P.Screener />} />
           <Route path="compare" element={<P.Compare />} />
           <Route path="news" element={<P.News />} />
+          <Route path="earnings" element={<P.Earnings />} />
+          <Route path="corporate-actions" element={<P.CorporateActions />} />
+          <Route path="data-quality" element={<P.DataQuality />} />
           <Route path="assistant" element={<P.Assistant />} />
           <Route path="reports" element={<P.Reports />} />
           <Route path="watchlists" element={<P.Watchlists />} />

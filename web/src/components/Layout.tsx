@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
-  Bell, BookOpen, Bot, Briefcase, Building2, Calculator, ChevronRight, Compass, FileText, Filter, GitCompare, HelpCircle, Home, LineChart,
-  Menu, Moon, Newspaper, PanelLeftClose, PanelLeftOpen, PiggyBank, Search, Settings, Star, Sun, Telescope, UploadCloud, X,
+  Bell, BookOpen, Bot, Briefcase, Building2, Calculator, CalendarDays, ChevronRight, Compass, FileText, Filter, Gift, GitCompare, HelpCircle, Home,
+  LineChart, Menu, Moon, Newspaper, PanelLeftClose, PanelLeftOpen, PiggyBank, Search, Settings, ShieldCheck, Star, Sun, Telescope, UploadCloud, X,
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
@@ -16,7 +16,8 @@ import { cx, Segmented } from './ui'
 const NAV: { section: string; items: { to: string; label: string; icon: ReactNode }[] }[] = [
   { section: 'Markets', items: [
     { to: '/', label: 'Home', icon: <Home /> }, { to: '/markets', label: 'Market Tracker', icon: <LineChart /> },
-    { to: '/news', label: 'News', icon: <Newspaper /> }, { to: '/explore', label: 'Explore', icon: <Compass /> },
+    { to: '/news', label: 'News', icon: <Newspaper /> }, { to: '/earnings', label: 'Earnings & Results', icon: <CalendarDays /> },
+    { to: '/corporate-actions', label: 'Corporate Actions', icon: <Gift /> }, { to: '/explore', label: 'Explore', icon: <Compass /> },
     { to: '/industries', label: 'Industries', icon: <Building2 /> },
   ] },
   { section: 'Research', items: [
@@ -30,7 +31,7 @@ const NAV: { section: string; items: { to: string; label: string; icon: ReactNod
   ] },
   { section: 'Learn', items: [
     { to: '/learn', label: 'Learning Centre', icon: <BookOpen /> }, { to: '/guide', label: 'How to Use', icon: <HelpCircle /> },
-    { to: '/settings', label: 'Settings', icon: <Settings /> },
+    { to: '/data-quality', label: 'Data Quality', icon: <ShieldCheck /> }, { to: '/settings', label: 'Settings', icon: <Settings /> },
   ] },
 ]
 
@@ -95,7 +96,8 @@ const SECTION_LABEL: Record<string, [string, string]> = {
   research: ['Equity Research', '/research'], valuation: ['Valuation Lab', '/valuation'], screener: ['Screener', '/screener'], compare: ['Compare', '/compare'],
   news: ['News', '/news'], assistant: ['AI Assistant', '/assistant'], reports: ['Reports', '/reports'], watchlists: ['Watchlists', '/watchlists'],
   portfolio: ['Portfolio', '/portfolio'], invest: ['Virtual Invest', '/invest'], documents: ['Documents', '/documents'], learn: ['Learning Centre', '/learn'],
-  guide: ['How to Use', '/guide'], settings: ['Settings', '/settings'],
+  guide: ['How to Use', '/guide'], settings: ['Settings', '/settings'], earnings: ['Earnings & Results', '/earnings'],
+  'corporate-actions': ['Corporate Actions', '/corporate-actions'], 'data-quality': ['Data Quality', '/data-quality'],
 }
 
 function Breadcrumbs() {

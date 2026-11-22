@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Bot, Calculator, ExternalLink, FileText, PiggyBank, RefreshCw } from 'lucide-react'
+import { Bot, Calculator, ExternalLink, FileText, PiggyBank, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AlertButton, CompanyAvatar, TradeTicket, WatchlistButton } from '../components/common'
+import { CoverageTable, type Coverage } from '../components/coverage'
 import { ExplainLabel } from '../components/Explain'
 import { Card, ChangePill, cx, DataBadge, EmptyState, ErrorState, Loading, Modal, Notice, SourceNote, Stat, Tabs, useToast } from '../components/ui'
 import { api, ApiError, type Quote } from '../lib/api'
@@ -10,6 +11,7 @@ import { baseSymbol, crore, inr, isNum, ist, mult, num, pct } from '../lib/forma
 import { useExperience, useInvalidate, useQuoteStream } from '../lib/hooks'
 import { CompanyNews, DocumentsTab, ValuationTab } from './company/Extra'
 import FinancialsTab from './company/Financials'
+import { HealthTab } from './company/Health'
 import { BankTab, ChartTab, NotesTab, OwnershipTab, PeersTab, QuarterlyTab, RiskTab, TechnicalsTab } from './company/Sections'
 
 export interface CompanyResponse {
@@ -27,7 +29,7 @@ export interface CompanyResponse {
   notes: Record<string, string>
 }
 
-type TabId = 'overview' | 'chart' | 'financials' | 'valuation' | 'quarterly' | 'technicals' | 'risk' | 'peers' | 'ownership' | 'bank' | 'news' | 'documents' | 'notes'
+type TabId = 'overview' | 'chart' | 'financials' | 'health' | 'valuation' | 'quarterly' | 'technicals' | 'risk' | 'peers' | 'ownership' | 'bank' | 'news' | 'documents' | 'notes'
 
 function Insights({ m, isFin }: { m: CompanyResponse['metrics']; isFin: boolean }) {
   const items: { text: string; tone: 'up' | 'down' | 'neutral' }[] = []
@@ -57,11 +59,13 @@ export default function Company() {
   const tabParam = (params.get('tab') as TabId) || 'overview'
   const setTab = (t: TabId) => setParams((p) => { p.set('tab', t); return p }, { replace: true })
   const [trade, setTrade] = useState(false)
+  const [showCoverage, setShowCoverage] = useState(false)
   const toast = useToast()
   const inv = useInvalidate()
   const nav = useNavigate()
   const q = useQuery({ queryKey: ['company', symbol], queryFn: () => api.get<CompanyResponse>(`/companies/${encodeURIComponent(symbol)}`), retry: false })
   const stream = useQuoteStream(q.data ? [symbol] : [])
+  const cov = useQuery({ queryKey: ['coverage', symbol], enabled: !!q.data && !q.data.company.is_sample, queryFn: () => api.get<Coverage>(`/companies/${encodeURIComponent(symbol)}/coverage`) })
   const quote = stream.quotes[symbol] ?? q.data?.quote
   const track = useMutation({
     mutationFn: () => api.post<{ symbol: string; message: string }>(`/companies/${encodeURIComponent(symbol)}/track`),
@@ -79,6 +83,7 @@ export default function Company() {
     const adv = exp === 'advanced'
     const t: { id: TabId; label: string }[] = [
       { id: 'overview', label: 'Overview' }, { id: 'chart', label: 'Price & performance' }, { id: 'financials', label: adv ? 'Financials & ratios' : 'Financials' },
+      { id: 'health', label: 'Health' },
       ...(adv ? [{ id: 'quarterly' as TabId, label: 'Quarterly' }] : []),
       ...(adv && q.data?.is_financial ? [{ id: 'bank' as TabId, label: 'Bank metrics' }] : []),
       { id: 'valuation', label: 'Valuation' }, { id: 'ownership', label: 'Shareholding' }, { id: 'peers', label: 'Competitors' },
@@ -150,6 +155,8 @@ export default function Company() {
           Data: price {quote?.status === 'live' ? 'live' : 'delayed'} ({quote?.time ? `${ist(quote.time)} IST` : 'time n/a'}) · financial statements from {c.source.split(' (')[0]} (third-party; verify with filings)
           {' · '}{d.statement_basis && d.statement_basis !== 'unspecified' ? `${d.statement_basis} basis` : 'consolidated/standalone basis not stated by the provider'} · {d.statement_currency === 'INR' ? '₹ crore' : d.statement_currency}
           {m.latest_fy ? ` · latest fiscal year ending ${ist(String(m.latest_fy), false)}` : ''}
+          {cov.data && <>{' · '}<button className="inline-flex items-center gap-1 font-medium text-brand-600 hover:underline dark:text-brand-300" onClick={() => setShowCoverage(true)}>
+            <ShieldCheck className="h-3 w-3" />Data coverage {cov.data.available}/{cov.data.applicable}</button></>}
         </p>
       )}
 
@@ -202,6 +209,7 @@ export default function Company() {
       )}
       {tab === 'chart' && <ChartTab symbol={symbol} live={quote} />}
       {tab === 'financials' && <FinancialsTab symbol={symbol} isFinancial={d.is_financial} />}
+      {tab === 'health' && <HealthTab symbol={symbol} />}
       {tab === 'quarterly' && <QuarterlyTab symbol={symbol} />}
       {tab === 'bank' && <BankTab symbol={symbol} sample={c.is_sample} />}
       {tab === 'technicals' && <TechnicalsTab symbol={symbol} />}
@@ -213,6 +221,10 @@ export default function Company() {
       {tab === 'documents' && <DocumentsTab symbol={symbol} links={d.official_links} sample={c.is_sample} />}
       {tab === 'notes' && <NotesTab symbol={symbol} initial={d.notes} />}
 
+      <Modal open={showCoverage} onClose={() => setShowCoverage(false)} title={`Data coverage · ${c.name}`} wide>
+        {cov.data ? <CoverageTable c={cov.data} /> : <Loading />}
+        <p className="mt-3 text-xs muted">Full details of every source are on the <Link to="/data-quality" className="text-brand-600 hover:underline dark:text-brand-300" onClick={() => setShowCoverage(false)}>Data Quality</Link> page.</p>
+      </Modal>
       <Modal open={trade} onClose={() => setTrade(false)} title="Virtual Invest · paper trade">
         <TradeTicket symbol={symbol} name={c.name} quote={quote} onDone={() => setTrade(false)} />
       </Modal>

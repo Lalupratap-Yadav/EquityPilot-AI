@@ -76,6 +76,10 @@ export function timeAgo(iso: string | null | undefined): string {
   return ist(iso, false)
 }
 
+/** '2026-11-18' -> 'Wed, 18 Nov' (calendar dates, no time zone shift). */
+export const dayLabel = (iso: string, opts: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) =>
+  new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', opts)
+
 export const baseSymbol = (s: string) => s.replace(/\.(NS|BO)$/, '')
 
 export const upDown = (v: unknown) => (isNum(v) ? (v > 0 ? 'text-up' : v < 0 ? 'text-down' : 'muted') : 'muted')
