@@ -1,5 +1,22 @@
 # EquityPilot AI – Project Status
 
+## v2.8 LEARNING CENTRE UPGRADE – complete (23 Nov 2026)
+The existing Learning Centre (`/learn`) upgraded in place; no new top-level sections. Details: [CHANGELOG.md](CHANGELOG.md), [TEST_REPORT.md](TEST_REPORT.md).
+
+| Item | State |
+|---|---|
+| Curriculum: 3 levels, 13 modules, 56 lessons covering every required area (fundamentals, Indian market, statements, ratios, valuation, products, technicals, portfolio, regulation) | ✅ tests check every lesson's nine parts and that each required concept is taught by a lesson |
+| Quizzes: 224 questions (MCQ, concept, numerical, statement reading, case, rules; easy/medium/hard), module tests, revision quiz; explanations, calculations and why each wrong option is wrong | ✅ 54 numerical answers recomputed from the formulas in tests; the other numerical questions are one- or two-step arithmetic with the working shown, checked by hand |
+| 11 calculators with steps; formulas identical in Python (`calc.py`) and TypeScript (`learnCalc.ts`) | ✅ both tested against the same hand calculations |
+| Case studies (TCS, HUL, Tata Steel, HDFC Bank, Reliance) from stored statements with period, source and basis | ✅ ratios match the app's ratio engine exactly; no provider calls |
+| Glossary (212 terms, typo-tolerant, A-Z, related terms, lesson links); site search finds the new terms | ✅ tests |
+| Progress: lessons, quiz scores, recent lessons, per-module completion; private per account; migration from the earlier format | ✅ tests (two users isolated; v1 scores migrated) |
+| Official sources and review dates; regulatory facts checked against SEBI, SCORES, SMART ODR, DICGC and MHA pages | ✅ 8 of the official home pages load; indiabudget, MCA, IEPF, NSE, BSE and NSDL refuse automated requests (403 or dropped connection), so they were not machine-checked |
+| AI Assistant learning mode (offline, free) and Claude `learning_content` tool | ✅ tests; **Claude path not run against the paid API** |
+| Mobile and desktop layout | ✅ true 390 px (device emulation) and 1280 px screenshots of home, lesson, glossary, calculators, case study, module test and progress: no overflow, NaN, undefined or console errors |
+
+Tests: **466 backend + 34 frontend passing** (143 and 12 new).
+
 ## v2.7 SPEED, SMARTER ASSISTANT, POLISH – complete (23 Nov 2026)
 No new sections or features. Details: [docs/PERFORMANCE.md](docs/PERFORMANCE.md), [TEST_REPORT.md](TEST_REPORT.md), [CHANGELOG.md](CHANGELOG.md).
 

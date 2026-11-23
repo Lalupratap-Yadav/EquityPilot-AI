@@ -1,5 +1,57 @@
 # Changelog
 
+## [2.8.0] – 23 Nov 2026 – Learning Centre upgrade
+The existing Learning Centre rebuilt as a structured course inside the same page (`/learn`); no new top-level sections.
+
+### Curriculum
+- **Three levels, 13 modules, 56 lessons** covering money and returns, the economy, how the Indian market works, corporate
+  actions, investor protection (beginner); financial statements, ratio analysis, investment products, technical analysis,
+  valuation basics (intermediate); DCF valuation, portfolio construction and risk, research practice with real case
+  studies (advanced). The eight earlier modules' content and quiz questions are folded in.
+- **One nine-part format for every lesson:** concept, why it matters, formula (or key rules), simple example,
+  interpretation, common mistakes, real-world application, quick revision and a knowledge check. Optional depth
+  (ratio cards, key terms) sits in collapsible sections.
+- **Ratio cards** for 20 ratios: meaning, formula, why it matters, how to read it, a worked example, limitations and when
+  the ratio is unsuitable; a lesson on reading ratios for banks, manufacturers and IT services.
+- **Real company case studies** (TCS, Hindustan Unilever, Tata Steel, HDFC Bank, Reliance Industries) built only from
+  EquityPilot's stored statements: financial year, source, fetch time, basis note and every ratio with its inputs. Facts,
+  calculations and interpretation are labelled separately. No provider calls are made.
+- **Official sources on every regulatory lesson** (SEBI, SCORES, SMART ODR, NSE, BSE, NSDL, CDSL, RBI, AMFI, NISM, MoSPI,
+  DICGC, MHA's cybercrime centre and others) with the review date 23 Nov 2026. Regulatory facts were checked against
+  those pages; rules that change point to the current official version.
+- Illustrative numbers are always labelled as such; no investment advice, journal or thesis tracking.
+
+### Practice
+- **224 questions:** knowledge checks in every lesson and a test for every module, mixing multiple choice, concept,
+  numerical, statement-reading, case-based and rules questions at easy, medium and hard levels, plus a **revision
+  quiz** drawn across modules. Every answer shows the explanation, the calculation and why each other option is wrong.
+  Numerical answers accept sensible rounding and spot common slips (a fraction typed for a percentage).
+- **11 interactive calculators** with editable inputs and every step shown: simple and compound interest, real return,
+  EPS and P/E, ROE and ROCE, linked financial statements, free cash flow, bond yield, portfolio return and Sharpe,
+  two-asset diversification, a basic DCF and CAPM/WACC.
+- **Glossary** of 212 terms (the earlier glossary, the metric guide and terms defined by lessons): typo-tolerant search,
+  A-Z browsing, formulas, examples, related terms and links to the lessons that teach them. Site search finds them too.
+
+### Progress
+- Lessons completed, quiz scores (best, last, attempts), recently viewed lessons, per-module completion and a
+  "continue learning" pointer, stored privately per account; reset from the My progress tab. Scores saved by the earlier
+  centre are migrated, and old links (`/learn?module=risk`) still open the right module.
+
+### AI Assistant learning mode
+- Free, offline answers grounded in the curriculum: explain a concept more simply, a fresh numerical example (labelled
+  illustrative), a formula step by step, the difference between two concepts (curated comparison tables), practice
+  questions with answers, and "why is my quiz answer wrong?" from a quiz result. Company questions are unaffected.
+- Claude (optional, paid) gets a `learning_content` tool and is told to base learning answers on it, label made-up
+  numbers and never invent formulas or rules; learning questions are prefetched so they usually need one model turn.
+
+### Engineering
+- Curriculum package `equitypilot/content/curriculum/` (content, assembly, formulas in `calc.py`, progress, case studies);
+  learning routes moved to `api/routes_learn.py`; frontend split into `web/src/pages/learn/`.
+- Tests: 143 new backend tests (every lesson's nine parts, coverage of the required topics, question quality, 54
+  numerical answers recomputed from the formulas, worked examples spot-checked, official source domains, tool links checked against
+  the web app's routes, progress privacy and migration, case studies, the assistant's learning mode) and 12 frontend
+  tests (calculator formulas, typo-tolerant search, lesson, quiz, glossary and calculator screens).
+
 ## [2.7.0] – 23 Nov 2026 – Speed, a smarter assistant and polish
 No new sections or features: the existing product made faster, more accurate and easier to use. Measured before and
 after in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).

@@ -1,4 +1,53 @@
-# EquityPilot AI – Test Report (v2.7.0, 23 Nov 2026)
+# EquityPilot AI – Test Report
+
+## v2.8.0 Learning Centre upgrade (23 Nov 2026)
+
+Run on 23 Nov 2026 on Windows 11. Automated tests run offline; the live checks used a copy of the real database on
+port 8011 while the owner's server kept running on port 8000.
+
+### Automated checks
+
+| Check | Result |
+|---|---|
+| `python -m pytest -q` | **466 passed, 0 failed** (323 before; 143 new in `test_learning_v28.py`) |
+| of which new | nine-part format for all 56 lessons · every required topic (A-I of the brief, 122 concepts) taught by a lesson · ratio cards complete for 17 ratios · question quality (224 questions: 4 distinct options, a reason for every wrong option, levels, kinds, tolerances) · 54 numerical answers recomputed from `calc.py` · worked examples and the DCF sensitivity table recomputed · sources limited to official domains, with a review date · regulatory facts present as checked · tool links matched against `web/src/App.tsx` routes · calculators referenced exist in the web app · no advice, journal or thesis wording · glossary (no unresolved terms, no alias claimed twice) · API (overview, modules, old module ids, lessons, quizzes, revision seed) · progress (events, validation, legacy format, privacy between two users, v1 migration) · case studies (provenance; ratios identical to the ratio engine; bank ratios withheld) · legacy adapter · assistant learning mode (simple, example, steps, difference, practice, quiz answer; company questions and recommendations untouched) · Claude tool and prefetch |
+| `npm test` | **34 passed** in 8 files (12 new: formula parity with Python, typo-tolerant search, home, lesson with nine parts and knowledge check, module test, old module link, glossary, calculators) |
+| `npx tsc -b`, `npm run build` | Passed. Learn chunk 60.5 KB (17.5 KB gzip), loaded only on `/learn` |
+| `npx oxlint` | 0 errors; no warnings in the new files |
+| `ruff check api equitypilot tests --select F,E9` | Clean |
+
+Changed existing tests: `test_live_ai.py` version test reads 2.8.0. The new assistant tests clear the per-minute rate-limit
+window after each test (all test clients share one address), so the assistant tests that run later are not throttled. The search concept list is now built from the
+Learning Centre glossary (the existing test that every searchable concept has a glossary entry still passes).
+
+### Live checks (copy of the real database)
+
+| Request | Size (gzip) | Time |
+|---|---|---|
+| `GET /api/learn` (levels, progress, glossary) | 29 KB (127 KB raw) | 0.50 s first request, 0.13 s after |
+| `GET /api/learn/modules/ratios` | 12.8 KB | 0.07 s |
+| `GET /api/learn/lessons/analysis-cases`, revision quiz | 2 KB | 0.02 s |
+| `GET /api/learn/case/TCS.NS` | 1.7 KB | 0.32 s first, then cached |
+
+- Case studies for TCS, HUL, Tata Steel, HDFC Bank and Reliance: every ratio equals the value from the app's ratio
+  engine (`compute_ratios`), FY2026, source "Yahoo Finance (via yfinance)", basis "unspecified" with the note shown.
+- Screenshots with true device emulation at 390 px (home, lesson, glossary with a misspelt search, DCF calculator, case
+  study, module test, progress) and at 1280 px (home, a regulatory lesson, a module): no horizontal overflow, no NaN or
+  undefined text, no console errors. A misspelt "rocce" finds ROCE.
+- Official links: SEBI (home, press releases, the F&O study release, SCORES circular), SCORES and its FAQ, SMART ODR,
+  investor.sebi.gov.in, CDSL, RBI, AMFI, NISM, MoSPI, RBI Retail Direct, DICGC's deposit-insurance guide (₹5 lakh per
+  depositor per bank confirmed) and MHA's I4C page (helpline 1930 confirmed) loaded. indiabudget.gov.in, mca.gov.in and
+  iepf.gov.in returned 403 to automated requests, and NSE, BSE and NSDL refused or dropped them; their addresses are
+  official but their pages were not machine-checked.
+
+### Not tested
+- The Claude engine's learning mode against the paid API (tested with a fake client; no paid call made).
+- The classic Streamlit Learning Centre page beyond the existing smoke test (it now shows the 13 modules through the
+  compatibility adapter).
+
+---
+
+# Test Report (v2.7.0, 23 Nov 2026)
 
 Run on 22-23 Nov 2026 (weekend night, market closed) on Windows 11, 12 logical processors. Live measurements used a copy
 of the real database and the real Yahoo Finance, NSE, RBI, SEBI and publisher feeds; the owner's v2.6.0 server kept running

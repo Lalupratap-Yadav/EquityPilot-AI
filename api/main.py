@@ -21,8 +21,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from equitypilot import config, db, workers
 from equitypilot.data import feeds, marketdata, sample, securities
 
-from . import (routes_company, routes_events, routes_explore, routes_invest, routes_market, routes_news, routes_research,
-               routes_search, routes_user)
+from . import (routes_company, routes_events, routes_explore, routes_invest, routes_learn, routes_market, routes_news,
+               routes_research, routes_search, routes_user)
 from .core import secret_key
 
 class JsonFormatter(logging.Formatter):
@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI):
     workers.shutdown()
 
 
-app = FastAPI(title="EquityPilot AI API", version="2.7.0", lifespan=lifespan,
+app = FastAPI(title="EquityPilot AI API", version="2.8.0", lifespan=lifespan,
               description="Indian equity research platform API. Educational use; not investment advice.")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SessionMiddleware, secret_key=secret_key(), session_cookie="ep_session", max_age=60 * 60 * 24 * 365,
@@ -191,7 +191,7 @@ async def unhandled(request: Request, exc: Exception):
 
 
 for r in (routes_search, routes_news, routes_events, routes_market, routes_company, routes_explore, routes_user, routes_invest,
-          routes_research):
+          routes_research, routes_learn):
     app.include_router(r.router)
 
 

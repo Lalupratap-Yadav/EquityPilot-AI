@@ -23,6 +23,10 @@
 - [x] Frontend interaction tests (v2.6: Vitest + Testing Library, `npm test`). Browser end-to-end tests (Playwright) are not added.
 - [ ] Decide whether to keep or remove the company "My notes" tab, watchlist item notes and the Reports "thesis" field (privacy review, v2.6).
 - [ ] Optional: store the PDF tables found at upload in their own structure (v2.7 appends their rows to the page text for question answering; there is no table view).
+- [ ] Learning Centre (v2.8): re-check the regulatory lessons against SEBI, exchange and RBI pages every few months and update `REVIEWED` in `equitypilot/content/curriculum/core.py`. Next items to watch: the RBI inflation-target framework, SEBI's research-analyst rules and equity-derivatives measures, and exchange price-band rules.
+- [ ] Learning Centre: open the NSE, BSE, NSDL, MCA, IEPF and Union Budget source links in a browser once; they refuse automated checks, so only their addresses (not their pages) were verified.
+- [ ] Learning Centre: optional "Go deeper" detail text for more lessons (the field is supported; ratio cards and key terms already fill it).
+- [ ] Learning Centre: run the assistant's learning mode with the paid Claude engine once (tested offline and with a fake client only).
 
 ## Completed in v2.1 (see CHANGELOG.md)
 - [x] Valuation summary, FCFE, margin of safety and historical multiple bands
