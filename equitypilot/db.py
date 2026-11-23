@@ -419,9 +419,14 @@ def _engine_for(url: str) -> Engine:
     return eng
 
 
+_DIRS_READY: set[str] = set()
+
+
 def get_engine() -> Engine:
-    config.ensure_dirs()
     url = os.environ.get("EQUITYPILOT_DATABASE_URL") or f"sqlite:///{config.DB_PATH}"
+    if url not in _DIRS_READY:        # create the data folders once, not on every query (3 mkdir calls each time,
+        config.ensure_dirs()          # which on Windows was the largest single cost in a profile of the server)
+        _DIRS_READY.add(url)
     return _engine_for(url)
 
 
@@ -469,6 +474,21 @@ def get_setting(key: str, default: Any = None) -> Any:
         return json.loads(row[0])
     except (TypeError, ValueError):
         return row[0]
+
+
+def get_settings(keys: list[str]) -> dict[str, Any]:
+    """Several settings in one query ({key: value}; missing keys map to None)."""
+    out: dict[str, Any] = {k: None for k in keys}
+    if not keys:
+        return out
+    with get_engine().connect() as conn:
+        rows = conn.execute(select(settings.c.key, settings.c.value).where(settings.c.key.in_(list(keys)))).all()
+    for k, v in rows:
+        try:
+            out[k] = json.loads(v)
+        except (TypeError, ValueError):
+            out[k] = v
+    return out
 
 
 def set_setting(key: str, value: Any) -> None:

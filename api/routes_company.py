@@ -64,7 +64,7 @@ def company(symbol: str, request: Request):
     c = _company_or_404(symbol)
     db.upsert(db.recent_views, [{"user_id": uid, "symbol": symbol, "ts": db.utcnow()}], ["user_id", "symbol"])
     quote = repo.get_quote(symbol) or {}
-    live = M.QUOTES.get([symbol])[symbol]
+    live = M.QUOTES.get_nowait([symbol])[symbol]     # never wait for the provider; the quote stream pushes a fresher value
     m = company_metrics(symbol)
     iid = industry_of(symbol, c.get("sector"), c.get("industry"))
     fd = repo.get_financials(symbol, auto_refresh=False)
@@ -171,7 +171,8 @@ def valuation(symbol: str, request: Request):
     base, notes = V.default_dcf_inputs(fd, quote)
     hist = V.multiple_history(fd, repo.get_prices(symbol, auto_refresh=False))
     peers = repo.get_peers(symbol)
-    pm = pd.DataFrame([company_metrics(p) for p in peers]) if peers else pd.DataFrame()
+    pc, pq = repo.get_companies(peers), repo.get_quotes(peers)
+    pm = pd.DataFrame([company_metrics(p, company=pc.get(p), quote=pq.get(p)) for p in peers]) if peers else pd.DataFrame()
     rel = V.peer_relative(snap, pm) if not pm.empty else pd.DataFrame()
     kd = None
     if not fd.empty and fd.latest("interest_expense") and fd.latest("total_debt"):
@@ -308,7 +309,8 @@ def risk(symbol: str, request: Request):
 def peers(symbol: str):
     _company_or_404(symbol)
     syms = [symbol] + repo.get_peers(symbol)
-    return clean({"rows": [company_metrics(s) for s in syms]})
+    comps, quotes = repo.get_companies(syms), repo.get_quotes(syms)
+    return clean({"rows": [company_metrics(s, company=comps.get(s), quote=quotes.get(s)) for s in syms]})
 
 
 @router.get("/companies/{symbol}/ownership")

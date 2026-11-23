@@ -6,12 +6,14 @@ crash a page - they are returned as messages and the cached data (if any) is sti
 """
 from __future__ import annotations
 
+import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Callable, Iterable
 
 import pandas as pd
+from sqlalchemy import func
 
 from .. import config, db
 from . import yahoo
@@ -32,10 +34,15 @@ class FinancialData:
     data_types: list[str] = field(default_factory=list)
     fetched_at: datetime | None = None
     currency: str = "INR"
+    signature: tuple | None = None          # identifies the stored rows this was built from (see get_financials)
 
     @property
     def empty(self) -> bool:
         return self.wide.empty
+
+    def copy(self) -> "FinancialData":
+        return replace(self, wide=self.wide.copy(), sources=list(self.sources), source_urls=list(self.source_urls),
+                       data_types=list(self.data_types))
 
     def get(self, key: str) -> pd.Series:
         """Series of a line item across periods (NaN where missing)."""
@@ -67,6 +74,35 @@ def get_company(symbol: str) -> dict | None:
 def get_quote(symbol: str) -> dict | None:
     df = db.read_df(db.select(db.quotes).where(db.quotes.c.symbol == symbol))
     return df.iloc[0].to_dict() if len(df) else None
+
+
+def _rows_by_symbol(df: pd.DataFrame) -> dict[str, dict]:
+    """Rows as dicts with missing values as None - exactly what a single-row read gives. (In a multi-row frame a
+    missing number becomes NaN, which is truthy: `quote.get("shares_outstanding") or fallback` would then misbehave.)"""
+    if df.empty:
+        return {}
+    obj = df.astype(object).where(df.notna(), None)
+    return {r["symbol"]: r for r in (obj.iloc[i].to_dict() for i in range(len(obj)))}
+
+
+def get_companies(symbols: list[str]) -> dict[str, dict]:
+    """Company rows for many symbols in one query."""
+    if not symbols:
+        return {}
+    return _rows_by_symbol(db.read_df(db.select(db.companies).where(db.companies.c.symbol.in_(list(dict.fromkeys(symbols))))))
+
+
+def get_quotes(symbols: list[str]) -> dict[str, dict]:
+    """Stored quote rows (fundamentals such as market cap and shares included) for many symbols in one query."""
+    if not symbols:
+        return {}
+    return _rows_by_symbol(db.read_df(db.select(db.quotes).where(db.quotes.c.symbol.in_(list(dict.fromkeys(symbols))))))
+
+
+def company_names(symbols: list[str]) -> dict[str, str]:
+    """{symbol: name}; unknown symbols map to themselves."""
+    rows = get_companies(symbols)
+    return {s: (rows.get(s) or {}).get("name") or s for s in symbols}
 
 
 def list_companies(universe_only: bool = False) -> pd.DataFrame:
@@ -151,22 +187,54 @@ def refresh_financials(symbol: str) -> tuple[bool, str]:
     return True, f"{total} statement values stored for {symbol}."
 
 
+def _signatures(symbol: str, period_type: str) -> dict[str, tuple]:
+    """{basis: (rows, last fetch time, sum of values)} for the stored statements - one small indexed query. Any insert,
+    update or delete of a statement value changes it, so it tells whether a cached table is still exact."""
+    f = db.financials.c
+    with db.get_engine().connect() as conn:
+        rows = conn.execute(db.select(f.basis, func.count(), func.max(f.fetched_at), func.sum(f.value))
+                            .where(f.symbol == symbol).where(f.period_type == period_type).group_by(f.basis)).all()
+    return {r[0]: (int(r[1]), str(r[2]), float(r[3]) if r[3] is not None else None) for r in rows}
+
+
 def available_bases(symbol: str, period_type: str = "annual") -> list[str]:
-    df = db.read_df(db.select(db.financials.c.basis).distinct()
-                    .where(db.financials.c.symbol == symbol).where(db.financials.c.period_type == period_type))
-    found = set(df["basis"]) if len(df) else set()
+    found = _signatures(symbol, period_type)
     return [b for b in BASIS_PREFERENCE if b in found]
+
+
+# Built statement tables, reused while the stored rows are unchanged (a company page, its valuation, peers, risk and
+# health tabs and the universe metrics all read the same tables; building one costs a query and a pivot).
+_FIN_CACHE: dict[tuple[str, str, str], FinancialData] = {}
+_FIN_LOCK = threading.Lock()
+_FIN_CACHE_MAX = 3000
 
 
 def get_financials(symbol: str, period_type: str = "annual", basis: str | None = None,
                    auto_refresh: bool = True) -> FinancialData:
-    bases = available_bases(symbol, period_type)
+    sigs = _signatures(symbol, period_type)
+    bases = [b for b in BASIS_PREFERENCE if b in sigs]
     if not bases and auto_refresh and not config.OFFLINE and not symbol.startswith("SAMPLE-"):
         refresh_financials(symbol)
-        bases = available_bases(symbol, period_type)
+        sigs = _signatures(symbol, period_type)
+        bases = [b for b in BASIS_PREFERENCE if b in sigs]
     if not bases:
         return FinancialData(pd.DataFrame(), period_type, basis or "—")
     basis = basis if basis in bases else bases[0]
+    sig = (symbol, period_type, basis) + sigs[basis]
+    with _FIN_LOCK:
+        hit = _FIN_CACHE.get(sig[:3])
+    if hit is not None and hit.signature == sig:
+        return hit.copy()                    # callers may modify what they get; the cached table stays intact
+    fd = _build_financials(symbol, period_type, basis)
+    fd.signature = sig
+    with _FIN_LOCK:
+        if len(_FIN_CACHE) >= _FIN_CACHE_MAX:
+            _FIN_CACHE.clear()
+        _FIN_CACHE[sig[:3]] = fd
+    return fd.copy()
+
+
+def _build_financials(symbol: str, period_type: str, basis: str) -> FinancialData:
     df = db.read_df(db.select(db.financials).where(db.financials.c.symbol == symbol)
                     .where(db.financials.c.period_type == period_type).where(db.financials.c.basis == basis))
     if df.empty:

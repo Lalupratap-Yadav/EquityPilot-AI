@@ -9,6 +9,7 @@ from __future__ import annotations
 import difflib
 import logging
 import re
+import threading
 import time
 
 import pandas as pd
@@ -18,6 +19,7 @@ from equitypilot import db
 from equitypilot.content import metrics_guide as MG
 from equitypilot.content.glossary import GLOSSARY
 from equitypilot.content.industries import BY_ID, INDUSTRIES
+from equitypilot.data import feeds as N
 from equitypilot.data import marketdata as M
 from equitypilot.data import securities as S
 from equitypilot.data import source_tiers as ST
@@ -187,18 +189,40 @@ def _tools(q: str) -> list[dict]:
     return [{"label": label, "description": desc, "to": to} for pat, label, desc, to in TOOLS if re.search(pat, q)][:4]
 
 
+_SEARCH_NEWS_FEEDS = [k for k in N.FEEDS if not k.startswith("nse_")] + ["yahoo_market"]
+NEWS_INDEX_TTL = 120
+_NEWS_INDEX: dict = {"t": 0.0, "rows": []}
+_NEWS_INDEX_LOCK = threading.Lock()
+
+
+def _news_rows() -> list[tuple[str, dict]]:
+    """Publisher and regulator headlines (newest first, with their lower-case titles), reloaded every 2 minutes.
+    Exchange filing titles are just company names - the company group covers those - and they are 95% of the news
+    table; matching words in memory over the rest takes about a millisecond, whatever the words."""
+    if time.time() - _NEWS_INDEX["t"] < NEWS_INDEX_TTL and _NEWS_INDEX["rows"]:
+        return _NEWS_INDEX["rows"]
+    with _NEWS_INDEX_LOCK:
+        if time.time() - _NEWS_INDEX["t"] < NEWS_INDEX_TTL and _NEWS_INDEX["rows"]:
+            return _NEWS_INDEX["rows"]
+        n = db.news_items.c
+        df = db.read_df(db.select(n.title, n.url, n.source, n.published, n.symbol).where(n.feed.in_(_SEARCH_NEWS_FEEDS))
+                        .order_by(n.published.desc().nulls_last()).limit(20000))
+        rows = [(str(r["title"] or "").lower(), r) for r in df.to_dict("records")]
+        _NEWS_INDEX.update(t=time.time(), rows=rows)
+        return rows
+
+
 def _news(q: str) -> list[dict]:
     words = [w for w in re.findall(r"[a-z0-9]{3,}", q) if w not in {"the", "and", "news", "latest", "today"}][:4]
     if not words:
         return []
-    n = db.news_items.c
-    stmt = db.select(n.title, n.url, n.source, n.published, n.symbol)
-    for w in words:
-        stmt = stmt.where(n.title.ilike(f"%{w}%"))
-    df = db.read_df(stmt.order_by(n.published.desc().nulls_last()).limit(12))
     out, seen = [], set()
     fund_query = "fund" in q or "etf" in q
-    for r in df.to_dict("records"):
+    for low, r in _news_rows():
+        if len(out) >= 4:
+            break
+        if not all(w in low for w in words):
+            continue
         title = (r["title"] or "").strip()
         if title.lower() in seen or (not fund_query and re.search(r"mutual fund|\betf\b", title, re.I)):
             continue

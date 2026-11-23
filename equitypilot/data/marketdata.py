@@ -59,6 +59,57 @@ def _next_open(now: datetime) -> datetime:
     return d
 
 
+def _clock_phase(now: datetime) -> str:
+    """Session phase from the clock alone (no holiday check, no locks): open | pre-open | closed."""
+    now = now.astimezone(IST)
+    if now.weekday() >= 5:
+        return "closed"
+    hm = now.hour * 60 + now.minute
+    return "open" if 9 * 60 + 15 <= hm <= 15 * 60 + 30 else "pre-open" if 9 * 60 <= hm < 9 * 60 + 15 else "closed"
+
+
+def _last_session_date(now: datetime):
+    """Date of the most recent weekday session that has finished (exchange holidays are not known here; callers treat a
+    missing session as 'not final' and fetch intraday data, so a holiday only costs the download that was skipped)."""
+    now = now.astimezone(IST)
+    if now.weekday() < 5 and now.hour * 60 + now.minute > 15 * 60 + 30:
+        return now.date()
+    d = now.date() - timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
+
+
+def _has_session(bars: pd.DataFrame, session) -> bool:
+    """True when daily bars include the given session date (so its close is known without intraday data)."""
+    return not bars.empty and pd.Timestamp(bars.index[-1]).date() >= session
+
+
+def _ticker(df: pd.DataFrame | None, symbol: str, group: list[str]) -> pd.DataFrame:
+    """One symbol's bars from a yfinance batch download, rows without a close dropped. Works for both column layouts:
+    yfinance 1.x keeps the ticker level even when a single symbol was requested (the old flat-layout assumption
+    silently returned no quote for every single-symbol refresh)."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    cols = df.columns
+    if isinstance(cols, pd.MultiIndex):
+        if symbol not in cols.get_level_values(0):
+            return pd.DataFrame()
+        sub = df[symbol]
+    elif len(group) == 1 and "Close" in cols:
+        sub = df
+    else:
+        return pd.DataFrame()
+    return sub.dropna(subset=["Close"]) if "Close" in sub.columns else pd.DataFrame()
+
+
+def _after_session(fetched_epoch: float) -> bool:
+    """True when a quote was fetched at a time its price could no longer change before the next session: a weekend, or
+    a weekday after 16:00 IST (30 minutes after the close, when the closing price is settled) or before 09:00 IST."""
+    t = datetime.fromtimestamp(fetched_epoch, IST)
+    return t.weekday() >= 5 or t.hour >= 16 or t.hour < 9
+
+
 def market_status(now: datetime | None = None) -> dict:
     """NSE session clock (IST): pre-open 09:00-09:15, regular session 09:15-15:30, Monday-Friday.
 
@@ -111,27 +162,37 @@ class YahooDelayedProvider(MarketDataProvider):
         import yfinance as yf
         return yf
 
-    def quotes(self, symbols: list[str]) -> dict[str, Quote]:
+    def quotes(self, symbols: list[str], status_open: bool | None = None, now: datetime | None = None) -> dict[str, Quote]:
+        """Latest price and previous close for many symbols (two batch downloads: 5 daily bars and today's 1-minute
+        bars). While the market is closed, symbols whose daily bars already include the last completed session skip the
+        1-minute download: Yahoo's last 1-minute bar of a finished session equals its daily close (checked on stocks
+        and indices), and yfinance spends ~0.1 s of CPU per symbol on that download. Such prices carry the session's
+        official close time, 15:30 IST."""
         syms = [s for s in symbols if not s.startswith("SAMPLE-")]
         if not syms or config.OFFLINE:
             return {}
         yf = self._yf()
+        now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+        closed = _clock_phase(now_ist) == "closed"
         out: dict[str, Quote] = {}
         try:
             daily = yf.download(syms, period="5d", interval="1d", group_by="ticker", progress=False,
                                 threads=True, auto_adjust=False, timeout=20)
-            intraday = yf.download(syms, period="1d", interval="1m", group_by="ticker", progress=False,
-                                   threads=True, auto_adjust=False, timeout=20)
+            need = syms
+            if closed:
+                session = _last_session_date(now_ist)
+                need = [s for s in syms if not _has_session(_ticker(daily, s, syms), session)]
+            intraday = yf.download(need, period="1d", interval="1m", group_by="ticker", progress=False,
+                                   threads=True, auto_adjust=False, timeout=20) if need else pd.DataFrame()
         except Exception as exc:  # network / provider failure -> caller falls back to cache
             log.warning("yahoo batch quote failed: %s", exc)
             return {}
-        status_open = market_status()["open"]
+        if status_open is None:
+            status_open = market_status()["open"]
+        need_set = set(need)
         for s in syms:
-            try:
-                d = daily[s].dropna(subset=["Close"]) if len(syms) > 1 else daily.dropna(subset=["Close"])
-                i = intraday[s].dropna(subset=["Close"]) if len(syms) > 1 else intraday.dropna(subset=["Close"])
-            except KeyError:
-                continue
+            d = _ticker(daily, s, syms)
+            i = _ticker(intraday, s, need) if s in need_set else pd.DataFrame()
             if d.empty:
                 continue
             last_day = pd.Timestamp(d.index[-1]).date()
@@ -139,6 +200,8 @@ class YahooDelayedProvider(MarketDataProvider):
                 price, ts = float(i["Close"].iloc[-1]), pd.Timestamp(i.index[-1])
             else:
                 price, ts = float(d["Close"].iloc[-1]), pd.Timestamp(d.index[-1])
+                if s not in need_set:              # a finished session's official close: label it with the close time
+                    ts = pd.Timestamp(datetime.combine(last_day, datetime.min.time()).replace(hour=15, minute=30), tz=IST)
             # previous close = close of the last completed session before the latest bar's session
             prev_rows = d[[pd.Timestamp(x).date() < ts.date() for x in d.index]]
             prev = float(prev_rows["Close"].iloc[-1]) if len(prev_rows) else None
@@ -298,6 +361,29 @@ def provider() -> MarketDataProvider:
     return _PROVIDER
 
 
+BULK_IN_WORKER = 8        # batch quote downloads of at least this many symbols run in the worker process
+
+
+def _worker_quotes(symbols: list[str], status_open: bool) -> dict[str, dict]:   # runs inside the worker process
+    return {s: q.dict() for s, q in YahooDelayedProvider().quotes(symbols, status_open=status_open).items()}
+
+
+def _provider_quotes(symbols: list[str]) -> dict[str, Quote]:
+    """Quotes from the active provider. Large Yahoo batches (the warmer's ~140 symbols, ~15 s of CPU in yfinance) run in
+    the worker process when the server enabled it (equitypilot/workers.py), so request handling is not slowed; small
+    fetches - an order's price, a newly viewed symbol - run here, where they cannot queue behind a batch."""
+    prov = provider()
+    if type(prov) is YahooDelayedProvider and len(symbols) >= BULK_IN_WORKER:
+        from .. import workers
+        if workers.available():
+            try:
+                raw = workers.run(_worker_quotes, list(symbols), market_status()["open"], timeout=180)
+                return {s: Quote(**q) for s, q in raw.items()}
+            except workers.WorkerUnavailable:
+                pass
+    return prov.quotes(symbols)
+
+
 # ------------------------------------------------------------------ cached quotes
 class QuoteCache:
     """Process-wide cache so many users/widgets share one provider request per symbol per TTL.
@@ -307,10 +393,21 @@ class QuoteCache:
     briefly for that fetch instead of starting a duplicate. Unrelated symbols never queue behind each other."""
 
     WAIT_FOR_INFLIGHT = 10.0                       # seconds a never-seen symbol waits for someone else's fetch
+    FINAL_TTL = 1800.0                             # a quote fetched after the session cannot change before the next one
 
     def __init__(self, ttl: float = 60.0):
         self.ttl, self._data, self._lock = ttl, {}, threading.Lock()
         self._inflight: dict[str, threading.Event] = {}
+
+    def _stale_list(self, symbols: list[str], now: float | None = None) -> list[str]:
+        """Symbols whose cached quote is missing or too old. While the market is closed, a quote that was fetched after
+        that session ended is final and is kept for FINAL_TTL instead of the in-session TTL (saves a provider call on
+        every page view in the evening without ever serving an outdated price)."""
+        now = now or time.time()
+        closed = _clock_phase(datetime.fromtimestamp(now, IST)) == "closed"
+        with self._lock:
+            return [s for s in symbols if s not in self._data
+                    or now - self._data[s][0] > (self.FINAL_TTL if closed and _after_session(self._data[s][0]) else self.ttl)]
 
     def _fetch(self, need: list[str]) -> dict[str, Quote]:
         with self._lock:
@@ -323,7 +420,7 @@ class QuoteCache:
         fetched: dict[str, Quote] = {}
         try:
             if mine:
-                fetched = provider().quotes(mine)
+                fetched = _provider_quotes(mine)
                 now = time.time()
                 with self._lock:
                     for s, q in fetched.items():
@@ -344,16 +441,28 @@ class QuoteCache:
         """stale_ok=True never blocks on the provider: returns cached (or DB) quotes and leaves refreshing
         to the background warmer. Use it for dashboards; use stale_ok=False when a fresh price matters (orders)."""
         if not stale_ok:
-            now = time.time()
-            with self._lock:
-                need = [s for s in symbols if s not in self._data or now - self._data[s][0] > self.ttl]
+            need = self._stale_list(symbols)
             if need:
                 self._fetch(need)
-        out = {}
         with self._lock:
             cached = {s: self._data[s][1] for s in symbols if s in self._data}
-        for s in symbols:
-            out[s] = cached[s] if s in cached else _from_db(s)
+        rest = [s for s in symbols if s not in cached]
+        stored = _from_db_many(rest) if rest else {}
+        return {s: cached[s] if s in cached else stored[s] for s in symbols}
+
+    def get_nowait(self, symbols: list[str]) -> dict[str, dict]:
+        """Quotes for a page that must not wait for the provider: cached (or stored) values now - each carries its own
+        time and status - while missing or stale symbols are fetched in the background. Pages showing these symbols
+        receive the fresh values through the quote WebSocket as soon as they arrive."""
+        out = self.get(symbols, stale_ok=True)
+        need = [s for s in self._stale_list(symbols) if not s.startswith("SAMPLE-")]
+        if need and not config.OFFLINE:
+            def run():
+                try:
+                    self._fetch(need)
+                except Exception as exc:  # provider down: the cached value stays, labelled with its own time
+                    log.warning("background quote refresh failed: %s", exc)
+            threading.Thread(target=run, name="quote-refresh", daemon=True).start()
         return out
 
     def peek(self, symbol: str) -> tuple[float, dict | None]:
@@ -417,10 +526,25 @@ def _persist(quotes: dict[str, Quote]) -> None:
 
 
 def _from_db(symbol: str) -> dict:
-    df = db.read_df(db.select(db.quotes).where(db.quotes.c.symbol == symbol))
-    if df.empty:
-        return Quote(symbol, None, None, None, None, None, None, "unavailable", "—").dict()
-    r = df.iloc[0]
+    return _from_db_many([symbol])[symbol]
+
+
+def _from_db_many(symbols: list[str]) -> dict[str, dict]:
+    """Stored quotes for many symbols in one query (a page of 120 symbols used to cost 120 queries)."""
+    out: dict[str, dict] = {}
+    syms = list(dict.fromkeys(symbols))
+    for i in range(0, len(syms), 500):
+        df = db.read_df(db.select(db.quotes).where(db.quotes.c.symbol.in_(syms[i:i + 500])))
+        for r in df.to_dict("records"):
+            out[r["symbol"]] = _stored_quote(r)
+    for s in syms:
+        if s not in out:
+            out[s] = Quote(s, None, None, None, None, None, None, "unavailable", "—").dict()
+    return out
+
+
+def _stored_quote(r: dict) -> dict:
+    symbol = r["symbol"]
     price, prev = r["price"], r["prev_close"]
     sample = symbol.startswith("SAMPLE-")
     t = r["as_of"] if pd.notna(r["as_of"]) else r["fetched_at"]

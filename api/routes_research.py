@@ -22,7 +22,6 @@ from equitypilot.data import repository as repo
 from equitypilot.data import source_tiers as ST
 from equitypilot.data import uploads as U
 from equitypilot.data.official import OFFICIAL_SOURCES
-from equitypilot.reports.pdf_report import ReportOptions, build_report
 
 from .core import LIMITER, clean, current_user, not_found
 
@@ -52,10 +51,28 @@ def news(request: Request, section: str = "disclosures", symbol: str | None = No
     return news_data(section, symbol, industry, q, tracked_only, limit, include_unrated)
 
 
+def _tidy_filings(items: list[dict], per_company: int = 2) -> list[dict]:
+    """Exchange filings as people read them: the '<company> has informed the Exchange about' preamble and the feed's
+    '|SUBJECT:' markup removed (as on the News page), and at most `per_company` items per company, so one busy filer
+    cannot fill a short list."""
+    from .routes_news import _clean_summary
+    out, seen = [], {}
+    for it in items:
+        if str(it.get("feed") or "").startswith("nse"):
+            it = {**it, "summary": _clean_summary(str(it.get("title") or ""), it.get("summary"))}
+            sym = it.get("symbol")
+            if sym:
+                seen[sym] = seen.get(sym, 0) + 1
+                if seen[sym] > per_company:
+                    continue
+        out.append(it)
+    return out
+
+
 def news_data(section: str = "disclosures", symbol: str | None = None, industry: str | None = None, q: str | None = None,
               tracked_only: bool = False, limit: int = 60, include_unrated: bool = False) -> dict:
     limit = max(1, min(limit, 200))
-    N.refresh_all()                          # TTL-cached per feed
+    N.refresh_all_in_background()            # never wait for a publisher; stored items carry their fetch time
     if section == "company":
         if industry in BY_ID:
             syms = BY_ID[industry]["symbols"]
@@ -64,9 +81,8 @@ def news_data(section: str = "disclosures", symbol: str | None = None, industry:
         else:
             syms = repo.list_companies()["symbol"].tolist()            # all tracked companies
         if symbol and not symbol.startswith("SAMPLE-"):
-            have = repo.get_disclosures(symbol, limit=50)
-            if have.empty or not (have["category"] == "News").any():    # never fetched for this company
-                repo.refresh_news(symbol)
+            from .routes_news import refresh_company_news_soon
+            refresh_company_news_soon(symbol)          # in the background: answer now from what is stored
         nse = N.query(feeds=["nse_announcements", "nse_results"], symbols=syms, q=q, limit=limit)
         ynews = repo.get_disclosures(None, limit=500)
         if not ynews.empty:
@@ -87,9 +103,10 @@ def news_data(section: str = "disclosures", symbol: str | None = None, industry:
     if not cfg:
         raise not_found("News section")
     tracked = repo.list_companies()["symbol"].tolist() if tracked_only else None
-    df = N.query(feeds=cfg["feeds"], category=cfg.get("category"), symbols=tracked, q=q, limit=limit * 2)
+    df = N.query(feeds=cfg["feeds"], category=cfg.get("category"), symbols=tracked, q=q, limit=limit * 6)
     items = [{**r, "tier": "primary" if r.get("feed") != "yahoo_market" else ST.tier(r.get("source"))} for r in df.to_dict("records")]
     items, hidden = _filter_tiers(items, include_unrated)
+    items = _tidy_filings(items)
     return clean({"items": items[:limit], "section": cfg["title"], "hidden_unrated": hidden, "unrated_note": ST.UNRATED_NOTE,
                   "sources": sorted({N.FEEDS[f]["source"] if f in N.FEEDS else "Yahoo Finance headlines (third-party publishers)" for f in cfg["feeds"]})})
 
@@ -130,11 +147,12 @@ async def upload(request: Request, file: UploadFile = File(...), symbol: str | N
         raise HTTPException(400, "The file is not a valid PDF.")
     if symbol and not repo.get_company(symbol):
         raise HTTPException(400, "Unknown company.")
+    import asyncio                      # extraction and indexing are CPU work: keep the event loop (and live quotes) free
     try:
-        ext = U.extract_pdf(data)
+        ext = await asyncio.to_thread(U.extract_pdf, data)
     except Exception as exc:
         raise HTTPException(400, f"Could not read this PDF: {exc}")
-    doc_id = U.save_document(symbol, name, doc_type[:60], period[:30], source_url, ext, user_id=uid)
+    doc_id = await asyncio.to_thread(U.save_document, symbol, name, doc_type[:60], period[:30], source_url, ext, uid)
     return clean({"id": doc_id, "pages": ext["n_pages"], "tables": len(ext["tables"]), "scanned": ext["scanned"],
                   "truncated": ext["truncated"],
                   "warning": "Little or no text found - this looks like a scanned PDF (OCR not included)." if ext["scanned"] else None})
@@ -266,6 +284,7 @@ class AISettings(BaseModel):
     api_key: str | None = Field(None, max_length=300)
     ollama_host: str | None = Field(None, max_length=200)
     ollama_model: str | None = Field(None, max_length=80)
+    effort: str | None = Field(None, pattern="^(low|medium|high)$")     # answer depth for Claude: speed and cost vs detail
 
 
 @router.get("/assistant/settings")
@@ -312,6 +331,7 @@ def report(symbol: str, body: ReportBody, request: Request):
             db.set_setting(key, val)
         else:
             db.execute(db.delete(db.settings).where(db.settings.c.key == key))
+    from equitypilot.reports.pdf_report import ReportOptions, build_report   # matplotlib + reportlab: ~3 s to import, so only when used
     pdf = build_report(symbol, ReportOptions(**body.model_dump()))
     fname = f"{F.safe_filename(symbol)}_research_{db.utcnow():%Y%m%d_%H%M}.pdf"
     return StreamingResponse(io.BytesIO(pdf), media_type="application/pdf",

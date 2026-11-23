@@ -150,6 +150,8 @@ class Match:
 
 def _fold(s: str) -> str:
     """Accents removed ('Nestlé' -> 'Nestle'), curly quotes straightened; length-preserving where possible."""
+    if s.isascii():                     # most headlines: nothing to fold (NFKD leaves ASCII unchanged)
+        return s
     s = s.replace("’", "'").replace("‘", "'").replace("�", "e")
     return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
@@ -232,6 +234,17 @@ class Matcher:
         blocked by names of other entities."""
         if not text:
             return []
+        memo = self.__dict__.setdefault("_memo", {})        # the same headlines are re-checked on every news reload
+        hit = memo.get(text)
+        if hit is not None:
+            return list(hit)
+        out = self._find(text)
+        if len(memo) > 50_000:
+            memo.clear()
+        memo[text] = tuple(out)
+        return out
+
+    def _find(self, text: str) -> list[Match]:
         t = _fold(text)
         spans = sorted(self._spans(t), key=lambda s: (-(s[1] - s[0]), -s[2], s[0]))
         taken: list[tuple[int, int]] = []

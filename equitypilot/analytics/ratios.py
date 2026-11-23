@@ -141,10 +141,30 @@ def _yoy(s: pd.Series) -> pd.Series:
     return out
 
 
+_RATIO_CACHE: dict[tuple, pd.DataFrame] = {}
+
+
 def compute_ratios(fd: FinancialData) -> pd.DataFrame:
-    """Ratio table: index = ratio key, columns = period_end (same as fd.wide)."""
+    """Ratio table: index = ratio key, columns = period_end (same as fd.wide).
+
+    Tables built from stored statements carry a signature of those rows; their ratio table is computed once and reused
+    (as a copy) until the statements change."""
     if fd.empty:
         return pd.DataFrame()
+    sig = fd.signature
+    if sig is not None:
+        hit = _RATIO_CACHE.get(sig)
+        if hit is not None:
+            return hit.copy()
+        out = _compute_ratios(fd)
+        if len(_RATIO_CACHE) > 3000:
+            _RATIO_CACHE.clear()
+        _RATIO_CACHE[sig] = out
+        return out.copy()
+    return _compute_ratios(fd)
+
+
+def _compute_ratios(fd: FinancialData) -> pd.DataFrame:
     g = fd.get
     rev, ni, ebit, ebitda = g("revenue"), g("net_income"), g("ebit"), g("ebitda")
     equity, assets, debt, cash = g("total_equity"), g("total_assets"), g("total_debt"), g("cash")

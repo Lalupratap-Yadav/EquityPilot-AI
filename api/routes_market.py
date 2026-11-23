@@ -5,11 +5,12 @@ import asyncio
 import logging
 import threading
 import time
+from datetime import datetime
 
 import pandas as pd
 from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
 
-from equitypilot import db
+from equitypilot import config, db
 from equitypilot.analytics import technicals as T
 from equitypilot.content.industries import BY_ID, industry_of
 from equitypilot.data import marketdata as M
@@ -103,19 +104,60 @@ _BARS_LOCK = threading.Lock()
 _BARS_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 
 
+_BARS_REFRESHING: set[tuple[str, str]] = set()
+
+
+def _bars_ttl(rng: str, fetched_at: float) -> float:
+    """60 s for intraday ranges and 15 min for daily ranges during the trading day; while the market is closed, bars
+    fetched after the session ended cannot change before the next one and are kept for 30 minutes."""
+    closed = M._clock_phase(datetime.fromtimestamp(time.time(), M.IST)) == "closed"
+    if closed and M._after_session(fetched_at):
+        return 1800
+    return 60 if rng in ("1D", "1W", "5D", "1M") else 900
+
+
+def _refresh_bars_soon(symbol: str, rng: str) -> None:
+    key = (symbol, rng)
+    with _BARS_LOCK:
+        if key in _BARS_REFRESHING:
+            return
+        _BARS_REFRESHING.add(key)
+
+    def run():
+        try:
+            df = M.provider().bars(symbol, rng)
+            if df is not None and not df.empty:          # never replace good bars with a failed download
+                with _BARS_LOCK:
+                    _BARS_CACHE[key] = (time.time(), df)
+        except Exception as exc:
+            log.warning("background bars refresh failed %s %s: %s", symbol, rng, exc)
+        finally:
+            with _BARS_LOCK:
+                _BARS_REFRESHING.discard(key)
+    threading.Thread(target=run, name=f"bars-{symbol}-{rng}", daemon=True).start()
+
+
 def _bars_cached(symbol: str, rng: str) -> pd.DataFrame:
-    """Provider bars with a short TTL (60 s intraday, 15 min daily+) so switching ranges feels instant."""
-    ttl = 60 if rng in ("1D", "1W", "5D", "1M") else 900
+    """Provider bars, cached (see _bars_ttl) so switching ranges feels instant. Stale-while-revalidate: once a range
+    has been loaded, an expired copy is returned at once and refreshed in the background - a chart never waits for
+    the provider again (its last point is brought up to date from the shared quote cache by the caller)."""
     key = (symbol, rng)
     with _BARS_LOCK:
         hit = _BARS_CACHE.get(key)
-        if hit and time.time() - hit[0] < ttl:
+        if hit and time.time() - hit[0] < _bars_ttl(rng, hit[0]):
             return hit[1]
+        if hit and not config.OFFLINE:
+            stale = hit[1]
+        else:
+            stale = None
         key_lock = _BARS_KEY_LOCKS.setdefault(key, threading.Lock())
+    if stale is not None:
+        _refresh_bars_soon(symbol, rng)
+        return stale
     with key_lock:                                     # identical concurrent requests share one download
         with _BARS_LOCK:
             hit = _BARS_CACHE.get(key)
-            if hit and time.time() - hit[0] < ttl:
+            if hit and time.time() - hit[0] < _bars_ttl(rng, hit[0]):
                 return hit[1]
         df = M.provider().bars(symbol, rng)
         with _BARS_LOCK:
@@ -205,7 +247,7 @@ def chart(symbol: str, request: Request, range: str = Query("1Y", pattern="^(1D|
             source = M.provider().name
             # one source of truth for the latest price: the shared quote cache used by tiles and headers
             try:
-                live = M.QUOTES.get([symbol]).get(symbol)
+                live = M.QUOTES.get_nowait([symbol]).get(symbol)
             except Exception as exc:
                 log.warning("quote for chart failed %s: %s", symbol, exc)
                 live = None

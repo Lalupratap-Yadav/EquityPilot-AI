@@ -9,10 +9,11 @@ import time
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 
 from equitypilot import config, db
 from equitypilot.analytics import bank as B
-from equitypilot.analytics.screener import METRIC_COLUMNS, PRESETS, apply_filters, company_metrics, universe_metrics
+from equitypilot.analytics.screener import METRIC_COLUMNS, PRESETS, apply_filters, company_metrics, universe_frame
 from equitypilot.content.industries import BY_ID, INDUSTRIES, industry_of
 from equitypilot.content import metrics_guide as MG
 from equitypilot.content.learning import MODULES
@@ -21,9 +22,8 @@ from equitypilot.data import feeds as N
 from equitypilot.data import marketdata as M
 from equitypilot.data import repository as repo
 from equitypilot.data import source_tiers as ST
-from equitypilot.data import securities as S
 
-from .core import clean, current_user, not_found
+from .core import clean, current_user, not_found, ttl_cache
 from .routes_market import universe_snapshot
 
 router = APIRouter(prefix="/api", tags=["explore"])
@@ -43,8 +43,9 @@ COLLECTIONS = [
 
 
 # ------------------------------------------------------------------ universe metrics (stale-while-revalidate)
-# Computing ratios for the whole universe takes minutes (≈1 s per company), so the last result is kept in memory and
-# on disk, served immediately, and recomputed in the background; only one computation runs at a time.
+# The last result is kept in memory and on disk, served immediately, and recomputed in the background; only one
+# computation runs at a time. Statement-based figures are cached per company until its statements change, so a
+# recompute mostly re-prices (about a second); the first one after a restart builds every company's tables.
 METRICS_TTL = 600
 _SNAPSHOT = config.DATA_DIR / "cache" / "universe_metrics.json"
 _mf_lock = threading.Lock()          # held while computing
@@ -52,18 +53,25 @@ _mf_state: dict = {"df": None, "at": 0.0}
 
 
 def _compute_metrics() -> pd.DataFrame:
-    df = universe_metrics()
-    df["industry_id"] = [industry_of(s, sec, ind) for s, sec, ind in zip(df["symbol"], df["sector"], df["industry"])]
-    cats = S.category_map()
-    df["category"] = [cats.get(s.rsplit(".", 1)[0], (None, None))[0] if not s.startswith("SAMPLE-") else None for s in df["symbol"]]
-    return df
+    return universe_frame()
 
 
-def _refresh_metrics() -> pd.DataFrame | None:
+def _compute_metrics_isolated() -> pd.DataFrame:
+    """Background recomputes run in the worker process (equitypilot/workers.py) when the server enabled it, so they do
+    not compete with request handling; otherwise, or if the worker fails, in this thread."""
+    from equitypilot import workers
+    from equitypilot.analytics.screener import _worker_universe_frame
+    try:
+        return workers.run(_worker_universe_frame, timeout=900)
+    except workers.WorkerUnavailable:
+        return _compute_metrics()
+
+
+def _refresh_metrics(isolated: bool = False) -> pd.DataFrame | None:
     if not _mf_lock.acquire(blocking=False):
         return None                  # another thread is already computing
     try:
-        df = _compute_metrics()
+        df = _compute_metrics_isolated() if isolated else _compute_metrics()
         _mf_state.update(df=df, at=time.time())
         try:
             _SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
@@ -97,14 +105,14 @@ def metrics_frame(wait: bool = False) -> pd.DataFrame:
     if fresh:
         return df
     if df is None or wait:
-        out = _refresh_metrics()
+        out = _refresh_metrics(isolated=wait and df is not None)   # nobody waits on the warmer: use the worker
         if out is not None:
             return out
         with _mf_lock:               # someone else is computing - wait for their result
             pass
         return _mf_state["df"] if _mf_state["df"] is not None else _compute_metrics()
     if not _mf_lock.locked():
-        threading.Thread(target=_refresh_metrics, name="metrics-refresh", daemon=True).start()
+        threading.Thread(target=_refresh_metrics, args=(True,), name="metrics-refresh", daemon=True).start()
     return df
 
 
@@ -127,6 +135,22 @@ def _cards(df: pd.DataFrame, n: int = 12) -> list[dict]:
     return out
 
 
+@ttl_cache(600)
+def _listed_by_category() -> dict[str, int]:
+    """Listed companies per AMFI category (the securities list changes weekly): one counting query."""
+    c = db.securities.c
+    df = db.read_df(db.select(c.category, func.count()).group_by(c.category))
+    return {str(r[0]): int(r[1]) for r in df.itertuples(index=False) if r[0]}
+
+
+@ttl_cache(60)
+def _trending_symbols(n: int = 12) -> list[str]:
+    """Most-viewed companies across users (counted in the database, not by reading every view)."""
+    c = db.recent_views.c
+    df = db.read_df(db.select(c.symbol, func.count().label("n")).group_by(c.symbol).order_by(func.count().desc(), c.symbol).limit(n))
+    return df["symbol"].tolist() if not df.empty else []
+
+
 @router.get("/explore")
 def explore(request: Request):
     uid = current_user(request)
@@ -137,12 +161,11 @@ def explore(request: Request):
         hits = apply_filters(real, PRESETS[c["preset"]])
         collections.append({**c, "companies": _cards(hits, 12), "count": len(hits)})
     cats = []
+    listed = _listed_by_category()
     for cat in ("Large Cap", "Mid Cap", "Small Cap"):
         sub = real[real["category"] == cat]
-        cats.append({"category": cat, "tracked": len(sub), "companies": _cards(sub, 12),
-                     "listed": int(db.read_df(db.select(db.securities.c.isin).where(db.securities.c.category == cat)).shape[0])})
-    views = db.read_df(db.select(db.recent_views.c.symbol))
-    trending = views["symbol"].value_counts().head(12).index.tolist() if not views.empty else []
+        cats.append({"category": cat, "tracked": len(sub), "companies": _cards(sub, 12), "listed": listed.get(cat, 0)})
+    trending = _trending_symbols()
     trend_df = real[real["symbol"].isin(trending)]
     fav = db.read_df(db.select(db.fav_industries.c.industry).where(db.fav_industries.c.user_id == uid))["industry"].tolist()
     return clean({
@@ -269,7 +292,8 @@ def delete_screen(sid: int, request: Request):
 def compare(symbols: str, request: Request):
     current_user(request)
     syms = [s for s in symbols.split(",") if s][:5]
-    rows = [company_metrics(s) for s in syms if repo.get_company(s)]
+    comps, quotes = repo.get_companies(syms), repo.get_quotes(syms)
+    rows = [company_metrics(s, company=comps[s], quote=quotes.get(s)) for s in syms if s in comps]
     for row in rows:
         _add_compare_extras(row)
     series = {}

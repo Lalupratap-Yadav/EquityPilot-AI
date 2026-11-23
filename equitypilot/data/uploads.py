@@ -209,25 +209,70 @@ def parse_prices(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 
 
 # ------------------------------------------------------------------ PDF documents
-def extract_pdf(data: bytes, max_pages: int = 600) -> dict:
-    """Extract text per page and tables (pdfplumber). Scanned (image-only) PDFs yield no text."""
-    import pdfplumber
-    pages, tables = [], []
-    with pdfplumber.open(io.BytesIO(data)) as pdf:
-        n = len(pdf.pages)
-        for i, page in enumerate(pdf.pages[:max_pages], start=1):
+def _pdfium_pages(data: bytes, max_pages: int) -> tuple[int, list[dict]] | None:
+    """(page count, text per page) with pdfium - about 0.003 s a page, ~35x faster than pdfplumber's text extraction.
+    None if pdfium cannot open the file (pdfplumber is then used for the text as well)."""
+    try:
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument(data)
+    except Exception:
+        return None
+    try:
+        n, pages = len(doc), []
+        for i in range(min(n, max_pages)):
+            text = ""
             try:
-                text = page.extract_text() or ""
+                page = doc[i]
+                tp = page.get_textpage()
+                text = (tp.get_text_range() or "").replace("\r\n", "\n").replace("\r", "\n")
+                tp.close()
+                page.close()
             except Exception:  # malformed page - keep going
-                text = ""
-            pages.append({"page": i, "text": text})
-            if len(tables) < 60:
+                pass
+            pages.append({"page": i + 1, "text": text})
+        return n, pages
+    finally:
+        doc.close()
+
+
+_FIGURES_RE = re.compile(r"\d[\d,]*\.?\d*\s+\d[\d,]*\.?\d*")      # two numbers in a row: a page that can hold a table
+
+
+def extract_pdf(data: bytes, max_pages: int = 600, table_pages: int = 60, max_tables: int = 60) -> dict:
+    """Text of every page and the financial tables. Scanned (image-only) PDFs yield little or no text.
+
+    Text comes from pdfium (fast). Tables come from pdfplumber, which costs ~0.1 s a page, so it runs only on pages that
+    contain figures - at most `table_pages` of them and `max_tables` tables. Each table's rows are appended to its
+    page's text ("Table: cell | cell"), so questions about table figures find them with the right page number."""
+    import pdfplumber
+    fast = _pdfium_pages(data, max_pages)
+    tables: list[dict] = []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        if fast is None:
+            n, pages = len(pdf.pages), []
+            for i, page in enumerate(pdf.pages[:max_pages], start=1):
                 try:
-                    for t in page.extract_tables() or []:
-                        if t and len(t) > 1 and len(t[0]) > 1:
-                            tables.append({"page": i, "rows": t})
-                except Exception:
-                    pass
+                    text = page.extract_text() or ""
+                except Exception:  # malformed page - keep going
+                    text = ""
+                pages.append({"page": i, "text": text})
+        else:
+            n, pages = fast
+        checked = 0
+        for i, page in enumerate(pdf.pages[:max_pages], start=1):
+            if len(tables) >= max_tables or checked >= table_pages:
+                break
+            if not _FIGURES_RE.search(pages[i - 1]["text"] if i - 1 < len(pages) else ""):
+                continue
+            checked += 1
+            try:
+                for t in page.extract_tables() or []:
+                    if t and len(t) > 1 and len(t[0]) > 1:
+                        tables.append({"page": i, "rows": t})
+                        rows = [" | ".join(str(c or "").strip() for c in r) for r in t]
+                        pages[i - 1]["text"] += "\n\nTable:\n" + "\n".join(r for r in rows if r.strip(" |"))
+            except Exception:
+                pass
     chars = sum(len(p["text"]) for p in pages)
     return {"n_pages": n, "pages": pages, "tables": tables, "truncated": n > max_pages,
             "scanned": chars < 10 * max(1, min(n, max_pages))}  # ~no text layer

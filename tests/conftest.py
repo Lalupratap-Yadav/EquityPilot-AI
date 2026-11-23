@@ -9,6 +9,7 @@ _TMP = tempfile.mkdtemp(prefix="equitypilot_test_")
 os.environ["EQUITYPILOT_DATA_DIR"] = _TMP
 os.environ["EQUITYPILOT_DB"] = str(Path(_TMP) / "test.db")
 os.environ["EQUITYPILOT_OFFLINE"] = "1"
+os.environ.setdefault("EQUITYPILOT_WORKER_PROCESS", "0")   # tests that need the worker process enable it explicitly
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 

@@ -256,6 +256,30 @@ def prune_news(force: bool = False) -> int:
     return removed
 
 
+_BG_REFRESH = threading.Lock()
+_BG_LAST = {"t": 0.0}
+BG_CHECK_SECONDS = 60          # feeds have 10-15 minute TTLs; checking them on every page view only costs queries
+
+
+def refresh_all_in_background() -> None:
+    """Start one background refresh of every feed (unless one is running or started in the last minute). Request
+    handlers use this so a page never waits for a publisher's server; they answer from the stored items, which carry
+    their own fetch times."""
+    import time
+    now = time.time()
+    if _BG_REFRESH.locked() or now - _BG_LAST["t"] < BG_CHECK_SECONDS:
+        return
+    _BG_LAST["t"] = now
+
+    def run():
+        with _BG_REFRESH:
+            try:
+                refresh_all()
+            except Exception as exc:
+                log.warning("news refresh failed: %s", exc)
+    threading.Thread(target=run, name="news-refresh", daemon=True).start()
+
+
 def refresh_all(force: bool = False) -> dict[str, str]:
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=6) as ex:          # feeds are independent; fetch them in parallel

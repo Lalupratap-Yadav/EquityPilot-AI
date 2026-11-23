@@ -21,7 +21,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from equitypilot import db
+from equitypilot import config, db
 from equitypilot.content.industries import BY_ID, industry_of
 from equitypilot.data import entities as E
 from equitypilot.data import feeds as N
@@ -51,14 +51,24 @@ FIN_INDUSTRIES = {"banking", "financial-services"}
 
 
 # ------------------------------------------------------------------ normalisation
+_NBSP_RE = re.compile(r"(?<![a-z])nbsp;")
+_SPACES_RE = re.compile(r"\s+")
+_INFORMED_RE = re.compile(r"\s+has informed the Exchange (about|regarding)\s*", re.I)
+
+
 def _clean_summary(title: str, summary: str | None) -> str | None:
     if not summary:
         return None
     import html
     s = html.unescape(html.unescape(summary)).replace("\xa0", " ")
-    s = re.sub(r"(?<![a-z])nbsp;", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    s = re.sub(rf"^{re.escape(title)}\s+has informed the Exchange (about|regarding)\s*", "", s, flags=re.I)
+    s = _NBSP_RE.sub(" ", s)
+    s = _SPACES_RE.sub(" ", s).strip()
+    # "<company> has informed the Exchange about ..." -> "...". (A per-title regex here compiled one pattern per headline,
+    # which overflowed Python's regex cache and cost ~2 ms per item.)
+    if s[:len(title)].lower() == title.lower():
+        m = _INFORMED_RE.match(s, len(title))
+        if m:
+            s = s[m.end():]
     s = s.replace("|SUBJECT:", " - Subject:").replace("|", " ").strip(" -")
     if s.lower() == title.lower():
         return None
@@ -134,7 +144,7 @@ def _item(*, title, summary, url, source, publisher, published, fetched, feed, c
     clean_sum = _clean_summary(title, summary)
     uid = hashlib.sha1(f"{feed}|{url}|{title}".encode()).hexdigest()[:16]
     import html as _html
-    title = re.sub(r"(?<![a-z])nbsp;", " ", _html.unescape(_html.unescape(title))).strip()
+    title = _NBSP_RE.sub(" ", _html.unescape(_html.unescape(title))).strip()
     return {"id": uid, "title": title, "summary": clean_sum, "url": url, "source": source, "publisher": publisher,
             "tier": tier, "kind": "Official disclosure" if tier == "primary" else "Media report", "category": cat,
             "sections": sorted(sections), "symbol": symbol, "symbols": symbols, "match": match if symbols else None,
@@ -152,20 +162,57 @@ EVENT_FEEDS = ["nse_board_meetings", "nse_corporate_actions"]      # calendar da
 
 
 _LOAD_CACHE: dict[tuple, tuple[float, list[dict]]] = {}
-LOAD_TTL = 45
+LOAD_TTL = 45            # after this a request triggers a background rebuild (feeds themselves refresh every 10-15 min)
+LOAD_MAX_STALE = 600     # older copies are never served: the request rebuilds and waits
+_LOAD_BUILDING: set[tuple] = set()
+_LOAD_LOCK = threading.Lock()
+
+
+def _store(key: tuple, items: list[dict]) -> None:
+    import time as _t
+    with _LOAD_LOCK:
+        if len(_LOAD_CACHE) > 64:
+            _LOAD_CACHE.clear()
+        _LOAD_CACHE[key] = (_t.time(), items)
+
+
+def _rebuild_isolated(days: int, symbols: list[str] | None, filings: bool | str) -> list[dict]:
+    """Background rebuilds run in the worker process when the server enabled it (about 1 s of row conversion and
+    company matching that would otherwise compete with requests); otherwise in this thread."""
+    from equitypilot import workers
+    try:
+        return workers.run(_load_uncached, days, symbols, filings, timeout=120)
+    except workers.WorkerUnavailable:
+        return _load_uncached(days, symbols, filings)
 
 
 def _load(days: int, symbols: list[str] | None = None, filings: bool | str = True) -> list[dict]:
-    """Cached wrapper: the same window is reused for 45 s across users and sections (feeds refresh every 10-15 min)."""
+    """Cached wrapper, shared across users and sections. Stale-while-revalidate: a copy older than LOAD_TTL is still
+    served (up to LOAD_MAX_STALE) while one background thread rebuilds it, so readers never pay the ~1 s rebuild."""
     import time as _t
     key = (days, tuple(symbols) if symbols else None, filings)
     hit = _LOAD_CACHE.get(key)
-    if hit and _t.time() - hit[0] < LOAD_TTL:
-        return [{**i, "also": []} for i in hit[1]]
+    if hit:
+        age = _t.time() - hit[0]
+        if age < LOAD_TTL:
+            return [{**i, "also": []} for i in hit[1]]
+        if age < LOAD_MAX_STALE:
+            with _LOAD_LOCK:
+                start = key not in _LOAD_BUILDING
+                _LOAD_BUILDING.add(key)
+            if start:
+                def rebuild():
+                    try:
+                        _store(key, _rebuild_isolated(days, symbols, filings))
+                    except Exception as exc:          # keep serving the previous copy
+                        log.warning("news rebuild failed: %s", exc)
+                    finally:
+                        with _LOAD_LOCK:
+                            _LOAD_BUILDING.discard(key)
+                threading.Thread(target=rebuild, name="news-rebuild", daemon=True).start()
+            return [{**i, "also": []} for i in hit[1]]
     items = _load_uncached(days, symbols, filings)
-    if len(_LOAD_CACHE) > 64:
-        _LOAD_CACHE.clear()
-    _LOAD_CACHE[key] = (_t.time(), items)
+    _store(key, items)
     return [{**i, "also": []} for i in items]
 
 
@@ -247,33 +294,61 @@ def _words(t: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", t.lower()) if len(w) > 3}
 
 
+_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+DUP_JACCARD = 0.75
+
+
 def dedupe(items: list[dict]) -> list[dict]:
     """One entry per story. Exchange filings are distinct when their subject differs (titles there are company names);
     media headlines merge when the wording is (nearly) the same within 48 hours; the most authoritative / earliest
-    copy is kept and the other publishers are listed under `also`."""
+    copy is kept and the other publishers are listed under `also`.
+
+    Near-duplicate search uses an exact prefix filter instead of comparing every headline with every other one
+    (which took ~12 s for 1,700 headlines): two word sets with Jaccard similarity >= t must share a word among the
+    first |x| - ceil(t*|x|) + 1 words of each set, in one global (rarest-first) word order. Candidates are then
+    checked with the original rule, in the original order, so the result is identical."""
     def key(it):
-        base = re.sub(r"[^a-z0-9]+", " ", it["title"].lower()).strip()[:100]
-        return base + "|" + re.sub(r"[^a-z0-9]+", " ", (it["summary"] or "").lower())[:80] if it["tier"] == "primary" else base
+        base = _NON_ALNUM_RE.sub(" ", it["title"].lower()).strip()[:100]
+        return base + "|" + _NON_ALNUM_RE.sub(" ", (it["summary"] or "").lower())[:80] if it["tier"] == "primary" else base
     order = sorted(items, key=lambda x: (_TIER_RANK.get(x["tier"], 9), x["published"] or "9999"))
+    words = {id(it): _words(it["title"]) for it in order if it["tier"] != "primary"}
+    ages = {id(it): _age_h(it) for it in order if it["tier"] != "primary"}
+    freq: dict[str, int] = {}
+    for w in words.values():
+        for t in w:
+            freq[t] = freq.get(t, 0) + 1
+
+    def prefix(w: set[str]) -> list[str]:
+        n = len(w)
+        p = n - (3 * n + 3) // 4 + 1                  # n - ceil(0.75 n) + 1, in integers
+        return sorted(w, key=lambda t: (freq.get(t, 0), t))[:p]
     kept: dict[str, dict] = {}
     media: list[tuple[set, dict]] = []
+    index: dict[str, list[int]] = {}
     for it in order:
         k = key(it)
         if k in kept:
             kept[k]["also"].append(it["publisher"] or it["source"])
             continue
         if it["tier"] != "primary":
-            w = _words(it["title"])
+            w = words[id(it)]
             dup = None
-            for ws, other in media:
-                if w and ws and len(w & ws) / len(w | ws) >= 0.75 and abs(_age_h(other) - _age_h(it)) <= 48:
-                    dup = other
-                    break
+            if w:
+                pre = prefix(w)
+                cands = sorted({pos for t in pre for pos in index.get(t, ())})
+                for pos in cands:
+                    ws, other = media[pos]
+                    if ws and len(w & ws) / len(w | ws) >= DUP_JACCARD and abs(ages[id(other)] - ages[id(it)]) <= 48:
+                        dup = other
+                        break
             if dup is not None:
                 src = it["publisher"] or it["source"]
                 if src not in dup["also"] and src != (dup["publisher"] or dup["source"]):
                     dup["also"].append(src)
                 continue
+            if w:
+                for t in prefix(w):
+                    index.setdefault(t, []).append(len(media))
             media.append((w, it))
         kept[k] = it
     for it in kept.values():
@@ -330,10 +405,7 @@ def build_feed(section: str = "top", q: str | None = None, symbol: str | None = 
     window = 2 if section in ("top", "breaking") and not days else days
     syms = [symbol] if symbol else (BY_ID[industry]["symbols"] if industry in BY_ID else None)
     if symbol and not symbol.startswith("SAMPLE-"):
-        last = db.get_setting(f"company_news:{symbol}")
-        if not last or db.utcnow() - datetime.fromisoformat(last) > timedelta(hours=6):   # company headlines: at most every 6 h
-            repo.refresh_news(symbol)
-            db.set_setting(f"company_news:{symbol}", db.utcnow().isoformat())
+        refresh_company_news_soon(symbol)          # never waits for the provider; stored items are shown now
     needs_filings: bool | str = "important" if section in ("top", "breaking") and not (symbol or industry) else \
         section in ("top", "breaking", "company", "announcements", "results", "banking", "sector", "ipo")
     items = _load(window if window else 0, syms if section in ("company", "sector") or symbol or industry else None, filings=needs_filings)
@@ -377,7 +449,9 @@ def build_feed(section: str = "top", q: str | None = None, symbol: str | None = 
         items.sort(key=lambda i: i["published"] or "", reverse=True)
     total = len(items)
     page = items[offset: offset + limit]
-    feeds_status = {k: db.get_setting(f"feed_refreshed:{k}") for k in list(N.FEEDS) + ["yahoo_market"]}
+    names = list(N.FEEDS) + ["yahoo_market"]
+    got = db.get_settings([f"feed_refreshed:{k}" for k in names])          # one query, not one per feed
+    feeds_status = {k: got[f"feed_refreshed:{k}"] for k in names}
     note = None
     if section == "breaking" and not page:
         note = f"Nothing from official or established sources in the last {BREAKING_HOURS} hours. Older stories are under Top market news."
@@ -399,21 +473,47 @@ def feed(request: Request, section: str = "top", q: str | None = Query(None, max
     return clean(build_feed(section, q, symbol, industry, source, days, sort, limit, offset, include_unrated, tracked_only))
 
 
-_REFRESHING = threading.Lock()
+_COMPANY_REFRESHING: set[str] = set()
+_COMPANY_LOCK = threading.Lock()
+
+
+def refresh_company_news_soon(symbol: str, max_age_hours: float = 6) -> bool:
+    """Refresh a company's provider headlines in the background when they are older than `max_age_hours` (one refresh
+    per company at a time). Returns True when a refresh was started. The page shows the stored items meanwhile; the
+    next load (the cached feed for that company is dropped once the refresh finishes) includes the new ones."""
+    if config.OFFLINE or symbol.startswith("SAMPLE-"):
+        return False
+    last = db.get_setting(f"company_news:{symbol}")
+    try:
+        fresh = bool(last) and db.utcnow() - datetime.fromisoformat(last) <= timedelta(hours=max_age_hours)
+    except ValueError:
+        fresh = False
+    if fresh:
+        return False
+    with _COMPANY_LOCK:
+        if symbol in _COMPANY_REFRESHING:
+            return False
+        _COMPANY_REFRESHING.add(symbol)
+
+    def run():
+        try:
+            repo.refresh_news(symbol)
+            db.set_setting(f"company_news:{symbol}", db.utcnow().isoformat())
+            with _LOAD_LOCK:
+                for k in [k for k in _LOAD_CACHE if k[1] and symbol in k[1]]:
+                    _LOAD_CACHE.pop(k, None)
+        except Exception as exc:
+            log.warning("company headlines refresh failed for %s: %s", symbol, exc)
+        finally:
+            with _COMPANY_LOCK:
+                _COMPANY_REFRESHING.discard(symbol)
+    threading.Thread(target=run, name=f"news-{symbol}", daemon=True).start()
+    return True
 
 
 def _refresh_in_background() -> None:
     """Feeds are TTL-cached and also refreshed by the server's warmer; a page view never waits for a publisher."""
-    if _REFRESHING.locked():
-        return
-
-    def run():
-        with _REFRESHING:
-            try:
-                N.refresh_all()
-            except Exception as exc:
-                log.warning("news refresh failed: %s", exc)
-    threading.Thread(target=run, name="news-refresh", daemon=True).start()
+    N.refresh_all_in_background()
 
 
 # ------------------------------------------------------------------ related, saved

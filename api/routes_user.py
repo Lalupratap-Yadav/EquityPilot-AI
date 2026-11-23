@@ -103,8 +103,8 @@ def watchlists(request: Request):
     wls = db.read_df(db.select(db.watchlists).where(db.watchlists.c.user_id == uid).order_by(db.watchlists.c.id))
     items = db.read_df(db.select(db.watchlist_items).where(db.watchlist_items.c.watchlist_id.in_(wls["id"].tolist() or [-1])))
     syms = sorted(set(items["symbol"])) if not items.empty else []
-    quotes = M.QUOTES.get(syms, stale_ok=len(syms) > 5) if syms else {}
-    names = {s: (repo.get_company(s) or {}).get("name", s) for s in syms}
+    quotes = M.QUOTES.get_nowait(syms) if syms else {}
+    names = repo.company_names(syms)
     out = []
     for _, w in wls.iterrows():
         its = items[items["watchlist_id"] == w["id"]] if not items.empty else items

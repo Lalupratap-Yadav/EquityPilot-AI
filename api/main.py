@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from equitypilot import config, db
+from equitypilot import config, db, workers
 from equitypilot.data import feeds, marketdata, sample, securities
 
 from . import (routes_company, routes_events, routes_explore, routes_invest, routes_market, routes_news, routes_research,
@@ -52,26 +52,33 @@ log = logging.getLogger("equitypilot.api")
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
 
+async def _warm_step(name: str, fn, *args) -> None:
+    """One warm-up step in a worker thread: timed, and isolated so a failure never skips the steps after it."""
+    import time
+    t0 = time.perf_counter()
+    try:
+        await asyncio.to_thread(fn, *args)
+    except Exception as exc:
+        log.warning("warmer step %s failed: %s", name, exc)
+        return
+    secs = time.perf_counter() - t0
+    (log.warning if secs > 30 else log.info)("warmer step %s took %.1f s", name, secs)
+
+
 async def warmer() -> None:
     """Background refresh so pages read from cache: universe quotes, feeds, securities list."""
     await asyncio.sleep(3)
-    if not config.OFFLINE:
-        try:                                       # the Market Tracker opens on NIFTY 50 / 1D: have it ready first
-            await asyncio.to_thread(routes_market._bars_cached, "^NSEI", "1D")
-        except Exception as exc:
-            log.warning("warmer (NIFTY chart): %s", exc)
+    if not config.OFFLINE:                         # the Market Tracker opens on NIFTY 50 / 1D: have it ready first
+        await _warm_step("NIFTY chart", routes_market._bars_cached, "^NSEI", "1D")
     while True:
-        try:
-            if not config.OFFLINE:
-                syms = routes_market.tracked_real() + marketdata.HOT.symbols()   # companies + indices + on-screen symbols
-                await asyncio.to_thread(marketdata.QUOTES.get, syms)
-                routes_market.universe_snapshot.cache_clear()
-                await asyncio.to_thread(marketdata.index_overview)
-                await asyncio.to_thread(routes_explore.metrics_frame, True)  # screener / explore / industries
-                await asyncio.to_thread(feeds.refresh_all)
-                await asyncio.to_thread(securities.refresh_securities)
-        except Exception as exc:  # keep the loop alive whatever happens
-            log.warning("warmer: %s", exc)
+        if not config.OFFLINE:
+            syms = routes_market.tracked_real() + marketdata.HOT.symbols()   # companies + indices + on-screen symbols
+            await _warm_step("quotes", marketdata.QUOTES.get, syms)
+            routes_market.universe_snapshot.cache_clear()
+            await _warm_step("index tiles", marketdata.index_overview)
+            await _warm_step("universe metrics", routes_explore.metrics_frame, True)   # screener / explore / industries
+            await _warm_step("news feeds", feeds.refresh_all)
+            await _warm_step("securities list", securities.refresh_securities)
         await asyncio.sleep(90 if marketdata.market_status()["open"] else 900)
 
 
@@ -97,14 +104,17 @@ async def hot_refresher() -> None:
 async def lifespan(app: FastAPI):
     db.get_engine()
     sample.load_sample_data()
-    tasks = [asyncio.create_task(warmer()), asyncio.create_task(hot_refresher())] \
-        if os.environ.get("EQUITYPILOT_NO_WARMER") != "1" else []
+    warm = os.environ.get("EQUITYPILOT_NO_WARMER") != "1"
+    if warm:
+        workers.enable()                    # bulk quote downloads and metrics recomputes in a worker process
+    tasks = [asyncio.create_task(warmer()), asyncio.create_task(hot_refresher())] if warm else []
     yield
     for t in tasks:
         t.cancel()
+    workers.shutdown()
 
 
-app = FastAPI(title="EquityPilot AI API", version="2.6.0", lifespan=lifespan,
+app = FastAPI(title="EquityPilot AI API", version="2.7.0", lifespan=lifespan,
               description="Indian equity research platform API. Educational use; not investment advice.")
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(SessionMiddleware, secret_key=secret_key(), session_cookie="ep_session", max_age=60 * 60 * 24 * 365,

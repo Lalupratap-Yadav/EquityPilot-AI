@@ -35,9 +35,36 @@ METRIC_COLUMNS = {
 }
 
 
-def company_metrics(symbol: str, auto_refresh: bool = False) -> dict:
-    company = repo.get_company(symbol) or {}
-    quote = repo.get_quote(symbol)
+_NO_ROW = object()
+# Statement-based metrics per company, reused until its statements change (prices feed only the valuation fields).
+_FUNDAMENTALS: dict[tuple, dict] = {}
+
+
+def _fundamentals(fd, is_fin: bool) -> dict:
+    key = (fd.signature, is_fin)
+    if fd.signature is not None and key in _FUNDAMENTALS:
+        return dict(_FUNDAMENTALS[key])
+    rt = R.compute_ratios(fd)
+    latest = rt.iloc[:, -1]
+    row = {k: latest.get(k) for k in ("revenue_growth", "net_income_growth", "ebitda_margin", "net_margin", "roe", "roce",
+                                      "debt_to_equity", "interest_coverage", "current_ratio", "cfo_to_net_income", "fcf_margin")}
+    row["revenue"] = fd.latest("revenue")
+    row["net_income"] = fd.latest("net_income")
+    row["revenue_cagr_3y"] = R.cagr(fd.get("revenue"), 3)
+    row["profit_cagr_3y"] = R.cagr(fd.get("net_income"), 3)
+    row["piotroski"] = None if is_fin else R.piotroski_f_score(fd)[0]
+    if fd.signature is not None:
+        if len(_FUNDAMENTALS) > 3000:
+            _FUNDAMENTALS.clear()
+        _FUNDAMENTALS[key] = dict(row)
+    return row
+
+
+def company_metrics(symbol: str, auto_refresh: bool = False, company: dict | None | object = _NO_ROW,
+                    quote: dict | None | object = _NO_ROW) -> dict:
+    """Metric row for one company. `company` / `quote` may be passed in when the caller already loaded them in bulk."""
+    company = (repo.get_company(symbol) if company is _NO_ROW else company) or {}
+    quote = repo.get_quote(symbol) if quote is _NO_ROW else quote
     fd = repo.get_financials(symbol, "annual", auto_refresh=auto_refresh)
     fq = repo.get_financials(symbol, "quarterly", basis=fd.basis if not fd.empty else None, auto_refresh=False)
     snap = V.market_snapshot(quote, fd, fq)
@@ -54,16 +81,7 @@ def company_metrics(symbol: str, auto_refresh: bool = False) -> dict:
         "quote_time": (quote or {}).get("as_of") or (quote or {}).get("fetched_at"),
     }
     if not fd.empty:
-        rt = R.compute_ratios(fd)
-        latest = rt.iloc[:, -1]
-        for k in ("revenue_growth", "net_income_growth", "ebitda_margin", "net_margin", "roe", "roce",
-                  "debt_to_equity", "interest_coverage", "current_ratio", "cfo_to_net_income", "fcf_margin"):
-            row[k] = latest.get(k)
-        row["revenue"] = fd.latest("revenue")
-        row["net_income"] = fd.latest("net_income")
-        row["revenue_cagr_3y"] = R.cagr(fd.get("revenue"), 3)
-        row["profit_cagr_3y"] = R.cagr(fd.get("net_income"), 3)
-        row["piotroski"] = None if row["is_financial"] else R.piotroski_f_score(fd)[0]
+        row.update(_fundamentals(fd, row["is_financial"]))
         row["currency"] = fd.currency
         if fd.currency != "INR":  # never show USD amounts under a rupee label
             row["revenue"] = row["net_income"] = None
@@ -77,12 +95,31 @@ def company_metrics(symbol: str, auto_refresh: bool = False) -> dict:
 def universe_metrics(symbols: list[str] | None = None) -> pd.DataFrame:
     if symbols is None:
         symbols = repo.list_companies(universe_only=True)["symbol"].tolist()
-    rows = [company_metrics(s) for s in symbols]
+    comps, quotes = repo.get_companies(symbols), repo.get_quotes(symbols)
+    rows = [company_metrics(s, company=comps.get(s), quote=quotes.get(s)) for s in symbols]
     df = pd.DataFrame(rows)
     for col in METRIC_COLUMNS:
         if col not in df:
             df[col] = None
     return df
+
+
+def universe_frame() -> pd.DataFrame:
+    """Universe metrics plus the industry and AMFI category of each company - what the screener, Explore and the
+    Industry pages read. Kept free of web-framework imports so it can run in a worker process."""
+    from ..content.industries import industry_of
+    from ..data import securities as S
+    df = universe_metrics()
+    df["industry_id"] = [industry_of(s, sec, ind) for s, sec, ind in zip(df["symbol"], df["sector"], df["industry"])]
+    cats = S.category_map()
+    df["category"] = [cats.get(s.rsplit(".", 1)[0], (None, None))[0] if not s.startswith("SAMPLE-") else None for s in df["symbol"]]
+    return df
+
+
+def _worker_universe_frame() -> pd.DataFrame:            # entry point inside the worker process
+    from .. import db
+    db.get_engine()
+    return universe_frame()
 
 
 PRESETS = {

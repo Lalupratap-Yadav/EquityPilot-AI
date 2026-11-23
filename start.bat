@@ -59,7 +59,8 @@ echo Starting EquityPilot AI on http://localhost:%PORT%/  ^(press Ctrl+C to stop
 echo The first start loads market data in the background; pages fill in within a minute.
 start "" cmd /c "timeout /t 4 >nul & start "" http://localhost:%PORT%/"
 set PYTHONIOENCODING=utf-8
-".venv\Scripts\python.exe" -m uvicorn api.main:app --host 127.0.0.1 --port %PORT% --log-level warning
+REM python -m api listens on 127.0.0.1 and ::1, so http://localhost connects without the IPv6 fallback delay
+".venv\Scripts\python.exe" -m api --port %PORT%
 goto :eof
 
 :fail
