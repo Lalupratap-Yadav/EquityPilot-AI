@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Star } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { Sparkline } from '../components/charts'
+import { Sparkline } from '../components/Sparkline'
 import { ChangePill, cx, Loading, PageHeader } from '../components/ui'
 import { api, type IndexRow } from '../lib/api'
 import { crore, mult, pct } from '../lib/format'

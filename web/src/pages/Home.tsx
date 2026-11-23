@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowRight, ExternalLink, Landmark, PiggyBank, Scale, Sparkles, Star } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Sparkline } from '../components/charts'
+import { Sparkline } from '../components/Sparkline'
 import { CardRow, CompanyAvatar } from '../components/common'
 import { LivePrice, MarketClock, useIndexOverview } from '../components/live'
 import { Card, ChangePill, cx, DataBadge, EmptyState, Segmented, Skeleton, SourceNote } from '../components/ui'
@@ -96,7 +96,7 @@ export default function Home() {
           {ov.isLoading && Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[104px] rounded-2xl" />)}
           {broad.map((i) => (
             <Link key={i.symbol} to={`/markets?symbol=${encodeURIComponent(i.symbol)}`} className="card card-hover p-3.5">
-              <div className="flex items-center justify-between gap-2"><span className="min-w-0 truncate text-xs font-semibold muted" title={i.name}>{i.name}</span><DataBadge className="shrink-0" type={ov.data?.status.open ? (ov.data.status.realtime ? 'live' : 'delayed') : 'close'} /></div>
+              <div className="truncate text-xs font-semibold muted" title={i.name}>{i.name}</div>
               <div className="mt-1 text-lg font-semibold"><LivePrice value={i.last} /></div>
               <div className="flex items-end justify-between">
                 <ChangePill value={i.symbol === '^INDIAVIX' ? null : i.change_pct} />{i.symbol === '^INDIAVIX' && <span className="text-xs muted">{pct(i.change_pct, 2, true)}</span>}
@@ -105,7 +105,7 @@ export default function Home() {
             </Link>
           ))}
         </div>
-        {ov.data && <SourceNote sources={[ov.data.source]} extra={ov.data.status.note} />}
+        {ov.data && <SourceNote sources={[ov.data.source]} extra={<><DataBadge className="align-middle" type={ov.data.status.open ? (ov.data.status.realtime ? 'live' : 'delayed') : 'close'} /> {ov.data.status.note}</>} />}
       </section>
 
       <div className="grid gap-6 xl:grid-cols-3 xl:grid-rows-[auto_1fr]">
@@ -128,7 +128,7 @@ export default function Home() {
                 {(mv.data?.[moverTab] ?? []).map((m) => (
                   <li key={m.symbol}><Link to={`/company/${encodeURIComponent(m.symbol)}`} className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-slate-50 dark:hover:bg-ink-800/70">
                     <CompanyAvatar symbol={m.symbol} size="sm" />
-                    <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{m.name}</div><div className="text-xs muted">{baseSymbol(m.symbol)}</div></div>
+                    <div className="min-w-0 flex-1"><div className="line-clamp-2 text-sm font-medium leading-snug" title={m.name}>{m.name}</div><div className="text-xs muted">{baseSymbol(m.symbol)}</div></div>
                     <div className="text-right"><div className="num text-sm font-semibold">{inr(m.price)}</div>
                       {moverTab === 'active' ? <div className="text-xs muted">₹{num(((m.price ?? 0) * (m.volume ?? 0)) / 1e7, 0)} Cr traded</div> : <ChangePill value={m.change_pct} />}</div>
                   </Link></li>
@@ -145,7 +145,7 @@ export default function Home() {
                 return (
                   <Link key={s.industry} to={`/industries/${s.industry}`} className="rounded-xl p-3 ring-1 ring-inset ring-black/[0.03] transition-[translate,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-lift)] dark:ring-white/5"
                     style={{ background: s.avg_change >= 0 ? `rgba(18,161,80,${0.08 + a * 0.32})` : `rgba(220,53,69,${0.08 + a * 0.32})` }}>
-                    <div className="truncate text-xs font-semibold">{s.name}</div>
+                    <div className="line-clamp-2 min-h-8 text-xs font-semibold leading-4" title={s.name}>{s.name}</div>
                     <div className={cx('num mt-1 text-base font-bold', s.avg_change >= 0 ? 'text-up' : 'text-down')}>{pct(s.avg_change, 2, true)}</div>
                     <div className="text-[10px] muted">{s.advances}▲ {s.declines}▼ · {s.companies} cos</div>
                   </Link>

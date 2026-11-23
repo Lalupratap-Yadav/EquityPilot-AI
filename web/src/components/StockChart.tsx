@@ -21,7 +21,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { compactNum, isNum, pct } from '../lib/format'
 import { useTheme } from '../lib/hooks'
-import { DOWN, UP, useSeriesColors } from './charts'
+import { DOWN, UP, useSeriesColors } from './chartTheme'
 import { cx, DataBadge, InfoTip, Segmented, Stat } from './ui'
 
 export type Range = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'MAX'
@@ -110,10 +110,11 @@ function ChartCanvas({ data, range, mode, style, overlays, panes, showVolume, he
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter Variable, system-ui', fontSize: 11,
         attributionLogo: false, panes: { separatorColor: c.grid, enableResize: false } },
-      grid: { vertLines: { visible: false }, horzLines: { visible: !simple, color: c.grid } },
-      rightPriceScale: { visible: !simple, borderVisible: false, scaleMargins: { top: simple ? 0.1 : 0.12, bottom: showVolume ? 0.22 : 0.08 } },
+      // both modes label the axes (price on the right, dates/times below); simple mode keeps the grid faint
+      grid: { vertLines: { visible: false }, horzLines: { visible: true, color: simple ? (c.theme === 'dark' ? 'rgba(148,163,184,0.08)' : 'rgba(15,23,42,0.05)') : c.grid } },
+      rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: simple ? 0.1 : 0.12, bottom: showVolume ? 0.22 : 0.08 } },
       timeScale: {
-        visible: !simple, borderVisible: false, timeVisible: data.intraday, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true, lockVisibleTimeRangeOnResize: true,
+        visible: true, borderVisible: false, timeVisible: data.intraday, secondsVisible: false, fixLeftEdge: true, fixRightEdge: true, lockVisibleTimeRangeOnResize: true,
         tickMarkFormatter: (t: Time, type: TickMarkType) => {
           const p = timeParts(t)
           if (type === TickMarkType.Year) return String(p.y)

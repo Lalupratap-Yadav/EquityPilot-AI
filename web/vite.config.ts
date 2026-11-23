@@ -14,12 +14,19 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 900,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks(id: string) {
-          if (id.includes('lightweight-charts')) return 'charts'
-          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'recharts'
-          if (id.includes('node_modules')) return 'vendor'
+        // Explicit, prioritised groups. (The old manualChunks function let the recharts group capture React and clsx -
+        // dependencies of recharts that the app shell also uses - so every first visit downloaded and parsed the whole
+        // 440 KB chart library.) Higher priority claims a module first; libraries the first page needs ('$initial')
+        // are claimed before the chart groups, so the chart libraries load only on pages that draw charts.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 40 },
+            { name: 'vendor', test: /node_modules/, tags: ['$initial'], priority: 35 },
+            { name: 'charts', test: /node_modules[\\/](lightweight-charts|fancy-canvas)[\\/]/, priority: 30 },
+            { name: 'recharts', test: /node_modules[\\/](recharts|d3-[a-z-]+|victory-vendor|es-toolkit|react-redux|@reduxjs|immer|reselect|redux|redux-thunk|decimal\.js-light|eventemitter3|tiny-invariant|internmap)[\\/]/, priority: 20 },
+          ],
         },
       },
     },
