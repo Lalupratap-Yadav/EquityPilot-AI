@@ -1,5 +1,22 @@
 # EquityPilot AI – Project Status
 
+## v2.7 SPEED, SMARTER ASSISTANT, POLISH – complete (23 Nov 2026)
+No new sections or features. Details: [docs/PERFORMANCE.md](docs/PERFORMANCE.md), [TEST_REPORT.md](TEST_REPORT.md), [CHANGELOG.md](CHANGELOG.md).
+
+| Item | State |
+|---|---|
+| Restart: requests never wait for Yahoo or publishers; heavy background jobs in a worker process | ✅ measured: first-burst Home 10.8 s → 0.6 s, company page 40 s → 0.5 s; worker exits when the server is killed (tested) |
+| Per-company statement / ratio / metrics caches; news de-duplication index; batched queries | ✅ identical output to v2.6.0 (127 companies, all news sections, randomised dedupe test); Valuation 5.3 s → 0.18 s, News top 10.6 s → 0.18 s |
+| First visit without the chart libraries; `localhost` without the IPv6 wait | ✅ 259 → 136 KB transferred; 0.21 s → 0.0006 s per new connection |
+| AI assistant: everyday wording, thresholds, follow-ups, direct-answer layout, quarterly results, plain English, document summaries, accuracy flags | ✅ 20 tests + manual run of 40+ questions on the real database |
+| Claude engine: prefetch, parallel tools, refusal fallbacks, effort, cost per attempt, explained errors | ✅ tested with a fake client; **not run against the paid API** (no key; no paid call made) |
+| Assistant page: clickable sources, retry, kept conversation, visible grounding warnings | ✅ 3 frontend tests |
+| Home / chart polish (truncation, repeated announcements, chart axes) | ✅ screenshots at 1440 px and true 390 px (device emulation): no overflow, NaN, undefined or console errors |
+| Single-symbol quotes with yfinance 1.x; PDF extraction speed and event-loop blocking | ✅ fixed and tested |
+| Live Kite Connect, paid Claude API, Docker, PostgreSQL, a live trading session | ❌ not tested (need credentials / tools / a market day) |
+
+Tests: **323 backend + 22 frontend passing**.
+
 ## v2.6 ACCURACY, OFFICIAL EVENTS, TRANSPARENCY – complete (15 Nov 2026)
 | Item | State |
 |---|---|

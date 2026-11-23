@@ -11,7 +11,10 @@
 ## Verification still open
 - [ ] Observe the in-session behaviour on a live trading day: 20 s refresh, price flashes, Breaking news.
 - [ ] Run the Claude research agent against the paid API with your key.
-- [ ] Reduce the ~1 minute slow period after a server restart (the warm-up competes for CPU); for example, move the warm-up into a separate worker process.
+- [x] Reduce the ~1 minute slow period after a server restart (v2.7: requests no longer wait for providers; bulk quotes, metrics and news rebuilds run in a worker process - first-burst Home 10.8 s → 0.6 s, see docs/PERFORMANCE.md).
+- [ ] Run the v2.7 Claude path against the paid API once (prefetch, refusal fallback handling, cost per attempt): it is tested only with a fake client.
+- [ ] Observe a live trading session with v2.7: the bulk quote refresh now runs in the worker process every 90 s; check request latency during it.
+- [ ] Measure the restart behaviour on a slower machine or a 1-vCPU container (the worker process helps less there and uses ~150 MB of memory; `EQUITYPILOT_WORKER_PROCESS=0` turns it off).
 - [x] Better company tagging of media headlines (v2.6: strict company matching for Yahoo and publisher RSS items).
 - [ ] Extend the curated company aliases when new companies are tracked (new companies match on their full name and NSE symbol only).
 - [ ] Observe the Earnings & Results and Corporate Actions pages over a full results season: the NSE feeds are rolling, so history builds up only while EquityPilot runs.
@@ -19,6 +22,7 @@
 - [ ] Test `EQUITYPILOT_DATABASE_URL` against a real PostgreSQL server.
 - [x] Frontend interaction tests (v2.6: Vitest + Testing Library, `npm test`). Browser end-to-end tests (Playwright) are not added.
 - [ ] Decide whether to keep or remove the company "My notes" tab, watchlist item notes and the Reports "thesis" field (privacy review, v2.6).
+- [ ] Optional: store the PDF tables found at upload in their own structure (v2.7 appends their rows to the page text for question answering; there is no table view).
 
 ## Completed in v2.1 (see CHANGELOG.md)
 - [x] Valuation summary, FCFE, margin of safety and historical multiple bands

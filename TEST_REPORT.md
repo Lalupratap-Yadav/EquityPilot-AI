@@ -1,4 +1,102 @@
-# EquityPilot AI – Test Report (v2.6.0, 15 Nov 2026)
+# EquityPilot AI – Test Report (v2.7.0, 23 Nov 2026)
+
+Run on 22-23 Nov 2026 (weekend night, market closed) on Windows 11, 12 logical processors. Live measurements used a copy
+of the real database and the real Yahoo Finance, NSE, RBI, SEBI and publisher feeds; the owner's v2.6.0 server kept running
+on port 8000 throughout. Automated tests run offline. Full performance write-up: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+## 1. Automated checks
+
+| Check | Result |
+|---|---|
+| `python -m pytest -q` (offline, temporary database) | **323 passed, 0 failed** (277 before; 46 new) |
+| of which new | `test_performance_v27.py` 22 (caches and invalidation, dedupe index vs the original rule, quotes, charts, worker process, non-blocking pages, search, launcher) · `test_assistant_v27.py` 20 (question understanding, thresholds, follow-ups, direct answers, quarterly, plain English, grounding report, Claude prefetch / parallel tools / fallback blocks / cost / error fallback with a fake client) · `test_documents_v27.py` 4 (tables searchable with their page, scanned PDFs, document summaries) |
+| `npm test` (Vitest + Testing Library) | **22 passed** in 6 files (3 new: assistant streaming, clickable sources, grounding warning, retry, kept conversation) |
+| `npx tsc -b`, `npm run build` | Passed |
+| `npx oxlint src tests` | 0 errors, 19 warnings (all in code this release did not change; 21 before) |
+| `ruff check api equitypilot tests --select F,E9` | Clean |
+
+Changed existing tests, with the reason:
+- `test_live_ai.py`: the three agent-loop tests script exact model turns, so they now call the loop with `prefetch=False`;
+  the fake client gained the beta endpoint the agent now streams on (refusal fallbacks); the version test reads 2.7.0.
+
+Equivalence checks (the speed-ups must not change any answer), run against the v2.6.0 code on the same database copy:
+- Universe metrics for all 127 companies: identical (`pandas.testing.assert_frame_equal`, 34 columns), cold and cached.
+- News feeds: all 13 sections, 2- and 7-day windows: identical items, order, merged publishers and summaries.
+- De-duplication: 30 randomised trials against the original all-pairs implementation: identical.
+- Quotes after the close with the 1-minute download skipped: identical prices and previous closes (10 live symbols).
+
+## 2. Restart (copy of the real database, 30-minute-old snapshot; Home's 11 requests + 5 others every ~3.5 s)
+
+| | v2.6.0 | v2.7.0 |
+|---|---|---|
+| Server answers | 7.0 s | 3.5 s |
+| First burst: slowest Home request / company page / NIFTY 1D chart / News top / search | 10.8 / 40.2 / 32.3 / 17.6 / 10.1 s | 0.58 / 0.47 / 3.6 / 3.2 / 1.0 s |
+| ~50 s after start: slowest Home request | 5.5 s | 0.45 s |
+| Rest of the 100 s window | 0.26-4.4 s; company page 4-7 s; chart up to 14 s | 0.24-0.47 s; one background window of 1.0-2.1 s |
+
+One earlier v2.7 run (before the last two fixes) had a request that waited until the probe's 60-second timeout; it did
+not recur, and the chart path - the only place left where a request could wait for Yahoo - was changed afterwards.
+
+## 3. Steady state (both servers warm, measured back to back over 127.0.0.1, median of 3)
+
+| Endpoint | v2.6.0 | v2.7.0 |
+|---|---|---|
+| `/api/news/feed?section=top` | 10.64 s | 0.18 s |
+| `/api/companies/TCS.NS/valuation` | 5.34 s | 0.18 s |
+| `/api/explore` | 4.04 s (a metrics recompute in the request) | 0.21 s |
+| `/api/companies/TCS.NS/peers` | 2.07 s | 0.11 s |
+| `/api/compare?symbols=TCS.NS,INFY.NS` | 0.94 s | 0.53 s |
+| `/api/events/results` | 0.55 s | 0.22 s |
+| `/api/companies/TCS.NS` | 0.52 s | 0.06 s |
+| `/api/companies/TCS.NS/risk` | 0.44 s | 0.12 s |
+| `/api/companies/TCS.NS/health` | 0.34 s | 0.09 s |
+| `/api/companies/TCS.NS/financials` | 0.33 s | 0.06 s |
+| `/api/chart/TCS.NS?range=1Y` | 0.29 s | 0.10 s |
+| `/api/news/summary` | 0.23 s | 0.10 s |
+| `/api/chart/^NSEI?range=1D` | 0.12 s | 0.03 s |
+| market overview / status / movers / sectors, search, watchlists, invest, portfolio, screener, learn | 0.01-0.07 s | 0.01-0.07 s |
+
+Other measurements: universe recompute 7.9 s → 0.9 s (first one after a restart in the worker process); news matching in
+search 10-230 ms → 1-5 ms; first-visit download 259 → 136 KB (gzip), JavaScript parsed 835 → 389 KB; new `localhost`
+connection 0.21 s → 0.0006 s; 300-page PDF 60.9 s → 12.1 s; server import 13.7 s → 6.5 s.
+
+## 4. AI assistant (offline analyst, real database copy)
+
+The questions from the brief, before → after:
+
+| Question | v2.6.0 | v2.7.0 |
+|---|---|---|
+| Explain Reliance Industries in simple English | facts dump with a 600-character provider description | everyday-language summary: what it does, size (₹18.07 lakh crore), sales and profit, "kept ₹7.6 from every ₹100", borrowing per ₹1, P/E in words |
+| Compare TCS and Infosys | comparison table | same table; follow-up "which has better margins?" answers "Higher net margin: TCS 18.4% vs 16.4%" |
+| What is the debt-to-equity ratio of Tata Motors? | no direct answer | "Tata Motors Limited: Debt / Equity 0.4x in FY2026" + plain meaning + note that "Tata Motors" also matches Tata Motors Passenger Vehicles |
+| Show the revenue growth of HDFC Bank | growth figures; called 27.5% CAGR "slowing" with no caveat | direct answer + flag that the 64.8% FY2024 jump is merger-sized and distorts the CAGR |
+| Explain the latest quarterly results (TCS on screen) | answered with annual data | Sep 2026 quarter: revenue ₹73,188 Cr (+1.3% QoQ), net profit ₹13,884 Cr (+4.0% QoQ); says YoY is not in the stored data |
+| What are the major risks of this company? | risk list | direct answer with the top flagged checks, then the list |
+| Explain DCF valuation | definition and formula | unchanged |
+| Which companies have ROE above 20%? | answered about **Havells** ("have") | screen: ROE > 20%, 41 of 122 companies, sorted by ROE; flags a P/E of 1.4x as a likely one-off gain |
+| Summarise this uploaded annual report | help text | "No document is selected" with steps; with a document, key passages quoted verbatim with page numbers |
+| What is happening in Indian markets? | answered about **Indian Oil** ("indian") | market overview (breadth, movers, sectors; says when index values are unavailable) |
+
+Also checked: typos ("relaince"), short names ("l&t"), follow-ups ("what about its margins?", "and its debt?", "what is its
+p/e", "compare it with wipro"), news ("latest news on reliance" → NSE filings), screens with several conditions and units
+("market cap above 5 lakh crore"), recommendations (declined, evidence shown).
+
+## 5. Visual checks
+
+Edge with device emulation (true 1440 px and 390 px viewports; the plain headless window cannot go below 504 px):
+Home, Company, Assistant, News and Screener - no horizontal overflow, no "NaN" or "undefined" text, no console errors.
+Fixed after review: truncated index, mover and sector names; repeated announcements with raw markup on Home; no axes on the
+simple price chart.
+
+## 6. Not tested
+
+- The Claude API (no key; no paid call was made). The new prefetch, refusal-fallback and cost code is tested with a fake
+  client only.
+- Zerodha Kite Connect against the real API, the Dockerfile, PostgreSQL, and behaviour during a live trading session.
+
+---
+
+# Test Report (v2.6.0, 15 Nov 2026)
 
 Run on 15 Nov 2026 (a Sunday, market closed) on Windows 11. "Live" means the running server on `localhost:8000` with the
 real NSE, RBI, SEBI, BSE, publisher RSS and Yahoo Finance data collected since 11-12 Nov 2026. Automated tests run offline.

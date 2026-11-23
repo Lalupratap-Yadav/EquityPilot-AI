@@ -85,13 +85,14 @@ python -m venv .venv
 pip install -r requirements.txt
 
 cd web && npm install && npm run build && cd ..
-python -m uvicorn api.main:app --port 8000
+python -m api --port 8000          # listens on 127.0.0.1 and ::1 only (python -m uvicorn api.main:app also works)
 ```
 
 Open **http://localhost:8000**. On first start:
 - the database is created and the sample companies load;
 - a background task fetches delayed quotes, the official feeds and the securities list;
-- the first universe-metrics computation takes a few minutes, and Explore and Screener show a loading state until it finishes. After that, a saved snapshot loads immediately.
+- the first universe-metrics computation (about 8 seconds) runs in a background worker process. Later restarts show the
+  saved snapshot at once and refresh it in the background.
 
 **Frontend development:** run `cd web && npm run dev` and open http://localhost:5173. Vite proxies `/api` to port 8000.
 
@@ -114,6 +115,7 @@ docker run -p 8000:8000 -v equitypilot-data:/app/data equitypilot
 | `EQUITYPILOT_DATA_DIR`, `EQUITYPILOT_DB` | Location of data and the SQLite database |
 | `EQUITYPILOT_DATABASE_URL` | Use PostgreSQL instead of SQLite. The code path exists but hasn't been tested against a live server |
 | `EQUITYPILOT_NO_WARMER=1` | Disable the background refresh tasks |
+| `EQUITYPILOT_WORKER_PROCESS=0` | Run bulk quote downloads, metrics recomputes and news rebuilds in the server process instead of the background worker process |
 | `EQUITYPILOT_MEDIA_RSS=0` | Turn off the publisher RSS feeds (Economic Times, Mint, Business Standard); official feeds stay on |
 | `EQUITYPILOT_LOG_JSON=1`, `EQUITYPILOT_SLOW_MS` | JSON log lines; threshold for slow-request warnings (default 2000 ms). Every API response carries `X-Request-ID` |
 | `EQUITYPILOT_HOT_INTERVAL` | Seconds between in-session refreshes of indices and on-screen symbols (default 20) |
@@ -123,9 +125,9 @@ docker run -p 8000:8000 -v equitypilot-data:/app/data equitypilot
 ### Tests
 
 ```bash
-python -m pytest -q          # offline, temporary database (277 tests)
+python -m pytest -q          # offline, temporary database (323 tests)
 cd web && npx tsc -b         # TypeScript type-check
-cd web && npm test           # frontend interaction tests (Vitest + Testing Library, 19 tests)
+cd web && npm test           # frontend interaction tests (Vitest + Testing Library, 22 tests)
 ```
 
 The suite covers:
@@ -142,8 +144,13 @@ The suite covers:
   data coverage, split and dividend accounting, search ranking across the securities master, and cross-user privacy
   (holdings, trades, saved articles, alerts, portfolio).
 - Frontend interaction tests for search and keyboard navigation, desktop and phone navigation, the Earnings, Corporate
-  Actions, Data Quality and Health views, news company links and filters, Virtual Invest order checks and error states.
+  Actions, Data Quality and Health views, news company links and filters, Virtual Invest order checks and error states,
+  and the AI assistant (streamed steps, clickable sources, flagged figures, retry, saved conversation).
   They use a fake API, so they test the interface, not live data.
+- Speed-ups that must not change results: statement and ratio caches (and their invalidation), the news de-duplication
+  index against the original all-pairs rule, quote and chart caches, the worker process (same output as in-process, exits
+  with the server), non-blocking pages, and the assistant's question understanding, direct answers, follow-ups, document
+  summaries, refusal fallbacks and cost estimates (with a fake Claude client - no paid calls).
 
 ### Command-line refresh
 
@@ -158,11 +165,18 @@ python -m equitypilot refresh [--quotes-only] [--news] [--symbols TCS INFY]
 
 | Engine | Cost | Notes |
 |---|---|---|
-| **Offline analyst** (default) | Free | Rule-based router over the research tools. It answers market questions ("How is the market today?"), comparisons ("Compare TCS and Infosys"), screens ("Top 10 IT companies by ROE", "debt-free companies"), news, single-company questions and concepts. Companies can be named in the question. It also quotes relevant passages from your PDFs |
-| **Claude API** (optional) | Paid per use | A tool-using research agent. Claude chooses which tools to call: find a company, a company's research pack, price performance, compare, screen, market overview, news, your documents and the metric guide. It then writes a cited answer that streams to the browser. Uses your own Anthropic API key. Settings shows the estimated cost, and you must tick a consent box. The key stays in your session cookie |
+| **Offline analyst** (default) | Free | Rule-based router over the research tools, for questions in everyday words: the market ("What is happening in Indian markets?"), comparisons ("Compare TCS and Infosys", "which has better margins?"), screens with conditions ("Which companies have ROE above 20%?", "IT stocks with P/E below 25"), one metric ("debt-to-equity of Tata Motors"), the latest quarterly results, a plain-English explanation of a company, news, concepts and summaries of your PDFs with page numbers. Follow-up questions ("what about its debt?") continue with the same company. Answers start with a direct answer, then the cited figures, calculations, a plain-English reading, limitations and the sources and periods used |
+| **Claude API** (optional) | Paid per use | A tool-using research agent. EquityPilot first fetches the data a predictable question needs (in parallel), so most questions need one model turn; Claude then writes a cited answer, looking up anything else with the same tools. Answers stream to the browser. Uses your own Anthropic API key and your consent; Settings shows the estimated cost, and each answer shows its own. "Answer depth" (quick / balanced / thorough) trades speed and cost for detail. If the API declines a request on safety grounds, the API retries it on another Claude model automatically; if a request fails (bad key, no credit, rate limit), the free offline analyst answers instead and says why |
 | **Ollama** (optional) | Free | A local open-source model, given the data the offline router gathered |
 
-Every engine reads the same source-tagged tool results ([T1], [S1] ...). LLM answers go through a grounding check that flags any figure not found in the data. The answer screen shows each research step as it runs. The assistant declines buy, sell or hold requests.
+**Claude API billing is separate from Claude subscriptions:** a Claude Pro or Max plan, or Claude Code access, does not include
+API usage. The API is billed per token to an Anthropic API account (console.anthropic.com). EquityPilot never calls it
+without your own key and your consent.
+
+Every engine reads the same source-tagged tool results ([T1], [S1] ...). Every LLM answer is checked against the data it
+was given: figures not found there, citations to sources that were never retrieved and figures the model calculated are
+reported with the answer, never hidden. Click a source tag to see the source. The answer screen shows each research step,
+and offers Stop, Retry and Copy. The assistant declines buy, sell or hold requests.
 
 ---
 
@@ -185,8 +199,12 @@ tests/          pytest suite
 ```
 
 Design notes:
-- **Cache first.** Pages read from SQLite and in-process caches. A background task refreshes quotes (every 90 s while the market is open) and feeds.
-- **Universe metrics** are stale-while-revalidate and persisted to disk.
+- **Cache first, never wait for a provider.** Pages read from SQLite and in-process caches; quotes, chart bars and news
+  are served at once and refreshed in the background (stale-while-revalidate). Each figure carries its own timestamp.
+- **A worker process** does the CPU-heavy background jobs - bulk quote downloads, universe-metrics recomputes and news
+  rebuilds - so request handling keeps the CPU. It exits with the server. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+- **Universe metrics** are stale-while-revalidate and persisted to disk; statement-based figures are cached per company
+  until its statements change.
 - **Live updates.** Quotes are pushed to the browser over a WebSocket.
 - **Database.** SQLAlchemy Core with additive migrations runs on SQLite by default, and Postgres is optional.
 
@@ -202,13 +220,14 @@ See [docs/AUDIT.md](docs/AUDIT.md) for why FastAPI + React was chosen and why Re
 ## Known limitations
 
 - **Prices** are delayed (about 15 minutes) or end-of-day by default. In session they auto-update every 20 seconds, but they aren't real-time. Real-time quotes need the optional, paid Zerodha Kite Connect connector, which has been tested only against mocked responses (see [docs/MARKET_DATA.md](docs/MARKET_DATA.md)).
-- **First minute after a restart:** some pages respond slowly while the background warm-up runs; index tiles are served from a saved snapshot meanwhile.
+- **First seconds after a restart:** pages answer from saved data at once; the first chart of a symbol waits for the
+  provider's first connection (3-10 s), and News can take a few seconds the very first time.
 - **Publisher headlines** come from the publishers' own RSS feeds (headline, short description, link) for personal, non-commercial research; full articles are read on the publisher's site.
 - **Statements** from Yahoo cover 4–5 years and don't state whether they're consolidated or standalone. Shareholding and bank metrics have to be entered from filings.
 - **PDFs** must contain text. Scanned PDFs are detected, but OCR isn't included.
 - **Alerts** are checked against the latest delayed price while the server is running. There are no push or SMS notifications.
 - **Portfolio risk** statistics apply today's weights to past returns.
-- **Universe metrics** take a few minutes to compute on a fresh install, roughly 1 s per tracked company.
+- **Universe metrics** take about 8 seconds to compute on a fresh install (in the background worker).
 
 ## Disclaimer
 

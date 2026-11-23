@@ -1,5 +1,70 @@
 # Changelog
 
+## [2.7.0] – 23 Nov 2026 – Speed, a smarter assistant and polish
+No new sections or features: the existing product made faster, more accurate and easier to use. Measured before and
+after in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+### Faster
+- **Restart:** the slowest Home request in the first burst after a restart fell from 10.8 s to 0.6 s, the company page
+  from 40 s to 0.5 s and the first NIFTY chart from 32 s to 3.6 s. Requests no longer wait for Yahoo or for publishers:
+  quotes, chart bars, company headlines and news feeds are served from what is stored and refreshed in the background.
+- **A background worker process** runs the CPU-heavy jobs (the ~140-symbol quote download, universe-metrics recomputes,
+  news rebuilds), so they no longer slow request handling. It exits with the server however the server is stopped.
+- **Statement tables, ratios and per-company metrics are cached** until a company's stored statements change (checked
+  with one small query). Valuation 5.3 s → 0.18 s, Peers 2.1 s → 0.11 s, company page 0.52 s → 0.06 s (warm, measured
+  back to back). Universe recomputes 7.9 s → 0.9 s, identical results.
+- **News & Intelligence:** Top section 10.6 s → 0.18 s. De-duplication used an all-pairs comparison (now an exact
+  prefix-filter index, identical output) and compiled one regular expression per headline.
+- **After the close**, final quotes are kept 30 minutes and the 1-minute download is skipped where the daily bar already
+  covers the session (identical prices; ~60% less CPU per refresh).
+- **First visit:** 136 KB instead of 259 KB transferred and 389 KB instead of 835 KB of JavaScript parsed - the chart
+  libraries now load only on pages with charts (the bundler had placed React inside the chart chunk).
+- **`http://localhost`:** `python -m api` (used by `start.bat`) listens on 127.0.0.1 and ::1, removing a ~0.2 s wait per
+  new connection on Windows. Still loopback only.
+- **Search:** news results matched in memory (~1-5 ms instead of 10-230 ms).
+- **PDF upload:** a 300-page report extracts in 12 s instead of 61 s, and no longer freezes other requests.
+- Smaller items: data folders created once instead of on every query, batched reads, counting queries on Explore, feed
+  checks at most once a minute, PDF report libraries loaded only when a report is made (server import 13.7 s → 6.5 s).
+
+### AI assistant
+- **Understands everyday wording:** common words no longer pick companies ("Which companies have ROE above 20%?" used to
+  answer about Havells; "What is happening in Indian markets?" about Indian Oil); names that match two listed companies
+  say so ("Tata Motors" - TMCV and TMPV since the 2025 demerger); conditions are understood ("ROE above 20%", "P/E below
+  15 and debt to equity under 0.5", "market cap above 5 lakh crore").
+- **Follow-ups** ("what about its margins?", "which has better margins?", "compare it with Wipro") continue with the
+  companies from the conversation.
+- **Answer layout:** a direct answer first (with the figure, period and formula for a metric question, and what it means in
+  everyday words), then facts, calculations, the rule-based reading, limitations and the sources and periods used. New
+  answers for the latest quarterly results (QoQ and YoY, with the NSE filing when stored), plain-English company
+  explanations and document summaries quoted with page numbers. Scanned PDFs are reported, never summarised from nothing.
+- **Accuracy flags:** growth jumps above 50% are flagged as likely mergers or accounting changes (HDFC Bank FY2024);
+  P/E below 3 in a screen is flagged as a likely one-off gain; a comparison says when a metric cannot be calculated for one
+  company (for example statements in another currency).
+- **Grounding check** now separates figures the model calculated from figures found nowhere in the data, and catches
+  citations to sources that were never retrieved; problems are shown with the answer, not in a tooltip.
+- **Claude engine:** predictable questions arrive with their data already fetched (in parallel), so most need one model
+  turn instead of two; parallel tool calls run at once; refusal fallbacks (`fallbacks: "default"`) with correct handling of
+  the declined attempt's blocks; an "Answer depth" setting (effort); cost estimates price cache reads and fallback attempts
+  at their own rates; API errors (bad key, no credit, rate limit) are explained and the offline analyst answers instead.
+- **Assistant page:** clickable source tags, Retry after an error, the conversation kept in the browser, and suggestions
+  phrased as people ask.
+- Settings explains that a Claude Pro/Max plan or Claude Code access does not include API usage.
+
+### Fixed
+- Single-symbol quote refreshes (used for Virtual Invest orders and newly viewed symbols) returned nothing with yfinance
+  1.x, so the last stored price was used; they now return the current delayed quote.
+- A force-killed server left its worker process running; workers now exit with their server.
+- Home: the index tiles, mover names and sector names were truncated; exchange announcements could show six items from
+  one company with raw "|SUBJECT:" markup.
+- The simple price chart had no axes; it now shows a price scale and time labels.
+- A failure in one warm-up step skipped the steps after it until the next cycle (15 minutes when closed).
+
+### Tests
+- 46 new backend tests (`tests/test_performance_v27.py`, `tests/test_assistant_v27.py`, `tests/test_documents_v27.py`)
+  and 3 frontend tests (`web/tests/assistant.test.tsx`). Three existing agent-loop tests now call the loop with
+  prefetching off (they script exact model turns) and their fake client gained the beta endpoint; the version test reads
+  2.7.0. No assertion was weakened.
+
 ## [2.6.0] – 15 Nov 2026 – Accuracy, official events and transparency
 ### Fixed
 - **Wrong company news (the Microsoft story under TCS).** Yahoo's per-company headline stream carries stories about other
