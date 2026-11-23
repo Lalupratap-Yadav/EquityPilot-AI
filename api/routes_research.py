@@ -1,4 +1,4 @@
-"""News intelligence, documents (upload + RAG), AI assistant, PDF reports, learning, data sources."""
+"""News intelligence, documents (upload + RAG), AI assistant, PDF reports, data sources."""
 from __future__ import annotations
 
 import io
@@ -14,9 +14,7 @@ from equitypilot import formatting as F
 from equitypilot.ai import offline, rag
 from equitypilot.ai import providers as P
 from equitypilot.ai.context import build_context, grounding_check
-from equitypilot.content.glossary import GLOSSARY
 from equitypilot.content.industries import BY_ID
-from equitypilot.content.learning import MODULES
 from equitypilot.data import feeds as N
 from equitypilot.data import repository as repo
 from equitypilot.data import source_tiers as ST
@@ -338,57 +336,7 @@ def report(symbol: str, body: ReportBody, request: Request):
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
-# ------------------------------------------------------------------ learning, glossary, data sources
-@router.get("/learn")
-def learn(request: Request):
-    uid = current_user(request)
-    return clean({"modules": MODULES, "progress": users.get_pref(uid, "learning_progress", {}), "glossary": glossary_terms()})
-
-
-def glossary_terms() -> list[dict]:
-    """Glossary terms plus the plain-English metric guide entries that the glossary does not already cover,
-    so every concept that search can find has an explanation page."""
-    from equitypilot.content import metrics_guide as MG
-    out = [{"term": k, **v} for k, v in GLOSSARY.items()]
-    have = {k.lower() for k in GLOSSARY} | {a.lower() for v in GLOSSARY.values() for a in v.get("aliases", [])}
-    for key, g in MG.GUIDE.items():
-        name = key.replace("_", " ")
-        if name in have:
-            continue
-        nice = name[0].upper() + name[1:]
-        for a, b in (("Roe", "ROE"), ("Roce", "ROCE"), ("Ebitda", "EBITDA"), ("ebitda", "EBITDA"), ("Cfo", "CFO"), ("cfo", "CFO"), ("Fcf", "FCF")):
-            nice = nice.replace(a, b)
-        out.append({"term": nice, "aliases": [name], "definition": g.get("what", ""),
-                    "interpretation": " ".join(x for x in (g.get("why"), g.get("read")) if x),
-                    **({"formula": "Example: " + g["example"]} if g.get("example") else {})})
-    return out
-
-
-@router.get("/learn/metrics")
-def metrics_guide():
-    """Plain-English metric explanations used by tooltips and 'Explain' panels across the app."""
-    from equitypilot.content import metrics_guide as MG
-    return {"guide": MG.GUIDE, "benchmark_note": MG.BENCHMARK_NOTE}
-
-
-class QuizResult(BaseModel):
-    module: str
-    score: int = Field(ge=0, le=20)
-
-
-@router.post("/learn/progress")
-def learn_progress(body: QuizResult, request: Request):
-    uid = current_user(request)
-    if body.module not in {m["id"] for m in MODULES}:
-        raise not_found("Module")
-    prog = users.get_pref(uid, "learning_progress", {}) or {}
-    prev = prog.get(body.module, {})
-    prog[body.module] = {"best": max(body.score, prev.get("best", 0)), "last": body.score,
-                         "attempts": prev.get("attempts", 0) + 1, "updated": F.ist(db.utcnow())}
-    users.set_pref(uid, "learning_progress", prog)
-    return prog
-
-
+# ------------------------------------------------------------------ data sources (learning routes live in routes_learn.py)
 @router.get("/data/quality")
 def data_quality(request: Request):
     """Data Quality & Source Transparency: feed status, market-data provider, statement coverage and EPS checks."""

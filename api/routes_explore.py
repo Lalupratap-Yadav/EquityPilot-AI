@@ -26,6 +26,7 @@ from equitypilot.data import source_tiers as ST
 from .core import clean, current_user, not_found, ttl_cache
 from .routes_market import universe_snapshot
 
+FEATURED_TOPICS = ("markets", "statements", "ratios", "valuation", "dcf", "portfolio", "technical", "protection")  # Explore cards
 router = APIRouter(prefix="/api", tags=["explore"])
 log = logging.getLogger("equitypilot.api")
 
@@ -171,7 +172,8 @@ def explore(request: Request):
     return clean({
         "collections": collections, "categories": cats, "trending": _cards(trend_df, 12),
         "featured": _cards(real, 10), "favourite_industries": fav,
-        "topics": [{"id": m["id"], "title": m["title"], "summary": m["summary"]} for m in MODULES],
+        "topics": [{"id": m["id"], "title": m["title"], "summary": m["summary"], "level": m["level"]}
+                   for m in MODULES if m["id"] in FEATURED_TOPICS],
         "categories_as_of": db.get_setting("securities_as_of"),
         "note": "Collections are rule-based screens on EquityPilot's tracked universe - they are not recommendations.",
     })

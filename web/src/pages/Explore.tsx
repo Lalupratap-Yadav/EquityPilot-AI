@@ -11,7 +11,7 @@ interface ExploreResp {
   collections: { id: string; title: string; description: string; companies: CompanyCardData[]; count: number }[]
   categories: { category: string; tracked: number; listed: number; companies: CompanyCardData[] }[]
   trending: CompanyCardData[]; featured: CompanyCardData[]
-  topics: { id: string; title: string; summary: string }[]
+  topics: { id: string; title: string; summary: string; level?: string }[]
   categories_as_of: string | null; note: string
 }
 interface IndustryRow { id: string; name: string; companies: number; market_cap: number | null; median_pe: number | null; median_roe: number | null; day_change: number | null; favourite: boolean }
@@ -64,9 +64,9 @@ export default function Explore() {
       <section>
         <h2 className="section-title mb-3 flex items-center gap-1.5"><BookOpen className="h-4 w-4 text-brand-600" />Popular research topics</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {d.topics.map((t, i) => (
+          {d.topics.map((t) => (
             <Link key={t.id} to={`/learn?module=${t.id}`} className={cx('card p-4 transition-colors hover:border-brand-300')}>
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-300">Module {i + 1}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-300">{t.level ? t.level[0].toUpperCase() + t.level.slice(1) : 'Learning'} module</div>
               <div className="mt-1 font-semibold">{t.title}</div><p className="mt-1 line-clamp-2 text-xs muted">{t.summary}</p>
             </Link>
           ))}

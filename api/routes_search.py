@@ -16,8 +16,6 @@ import pandas as pd
 from fastapi import APIRouter, Query, Request
 
 from equitypilot import db
-from equitypilot.content import metrics_guide as MG
-from equitypilot.content.glossary import GLOSSARY
 from equitypilot.content.industries import BY_ID, INDUSTRIES
 from equitypilot.data import feeds as N
 from equitypilot.data import marketdata as M
@@ -75,20 +73,20 @@ def _norm(s: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9 /&-]+", " ", (s or "").lower()).split())
 
 
+_INDEX_TERMS = {"NIFTY 50", "SENSEX"}      # the indices group already answers these
+
+
 def _concepts() -> list[dict]:
+    """Every Learning Centre glossary entry (the original glossary, the metric guide and terms defined by lessons)."""
+    from urllib.parse import quote
+
+    from equitypilot.content import curriculum as CU
     out = []
-    for name, e in GLOSSARY.items():
-        out.append({"key": name, "name": name, "aliases": [_norm(a) for a in e.get("aliases", [])] + [_norm(name)],
-                    "summary": e.get("definition", ""), "to": f"/learn?tab=glossary&term={name}"})
-    have = {a for c in out for a in c["aliases"]}
-    for key, g in MG.GUIDE.items():
-        nm = key.replace("_", " ")
-        if nm in have:
+    for e in CU.glossary():
+        if e["term"] in _INDEX_TERMS:
             continue
-        nice = nm[0].upper() + nm[1:]
-        for a, b in (("Roe", "ROE"), ("Roce", "ROCE"), ("Ebitda", "EBITDA"), ("ebitda", "EBITDA"), ("Cfo", "CFO"), ("cfo", "CFO"), ("Fcf", "FCF")):
-            nice = nice.replace(a, b)
-        out.append({"key": key, "name": nice, "aliases": [nm], "summary": g.get("what", ""), "to": f"/learn?tab=glossary&term={nice}"})
+        out.append({"key": e.get("ratio") or e["term"], "name": e["term"], "aliases": [_norm(a) for a in e["aliases"]] + [_norm(e["term"])],
+                    "summary": e.get("definition", ""), "to": f"/learn?tab=glossary&term={quote(e['term'])}"})
     return out
 
 

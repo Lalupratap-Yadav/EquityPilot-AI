@@ -27,11 +27,13 @@ import pandas as pd
 
 from equitypilot import config
 from equitypilot import formatting as F
+from equitypilot.ai import learning as LRN
 from equitypilot.ai import offline, rag
 from equitypilot.ai import providers as P
 from equitypilot.ai.context import build_context, grounding_report
 from equitypilot.analytics import technicals as T
 from equitypilot.analytics.screener import METRIC_COLUMNS
+from equitypilot.content import curriculum as CU
 from equitypilot.content import metrics_guide as MG
 from equitypilot.content.glossary import GLOSSARY, find_term
 from equitypilot.content.industries import BY_ID, INDUSTRIES
@@ -119,6 +121,14 @@ TOOLS = [
     {"name": "search_documents",
      "description": "Search the annual reports / filings the user selected for this conversation; returns verbatim passages with page numbers.",
      "input_schema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    {"name": "learning_content",
+     "description": "EquityPilot Learning Centre content (beginner to advanced, reviewed against official sources): for a topic, the "
+                    "glossary entry and the lesson's concept, formulas or key rules, worked example, interpretation, common mistakes "
+                    "and practice question ids; for a question id such as 'ratios-returns:c1', that quiz question with its correct "
+                    "answer, explanation, calculation and why each option is wrong. Use it for learning questions: explaining a concept "
+                    "more simply, formulas step by step, differences between concepts, practice questions and quiz answers.",
+     "input_schema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Concept or lesson, e.g. 'ROCE' or 'terminal value'"},
+                                                        "question_id": {"type": "string", "description": "Learning Centre question id, e.g. 'dcf-wacc:c2'"}}}},
     {"name": "explain_metric",
      "description": "Plain-English definition, formula, how to read it and benchmark guidance for a finance metric or term (e.g. ROCE, P/E, free cash flow).",
      "input_schema": {"type": "object", "properties": {"term": {"type": "string"}}, "required": ["term"]}},
@@ -130,7 +140,7 @@ STATUS_TEXT = {"find_company": "Looking up {query}", "company_research": "Readin
                "price_performance": "Checking {symbol} price history", "compare_companies": "Comparing {symbols}",
                "screen_companies": "Screening tracked companies", "market_overview": "Reading today's market",
                "latest_news": "Checking latest news", "search_documents": "Searching your documents for '{query}'",
-               "explain_metric": "Looking up {term}"}
+               "explain_metric": "Looking up {term}", "learning_content": "Reading the Learning Centre"}
 
 
 # ------------------------------------------------------------------ the toolbox (one per question)
@@ -477,6 +487,16 @@ class ToolBox:
             out.append(f"[{sid}] {p['filename']}, page {p['page']}:\n{p['text']}")
         return "\n\n".join(out)
 
+    def t_learning_content(self, topic: str | None = None, question_id: str | None = None) -> str:
+        if not (isinstance(topic, str) and topic.strip()) and not (isinstance(question_id, str) and question_id.strip()):
+            raise ToolError("Give a topic or a question_id.")
+        text = LRN.content_for(topic, question_id)
+        if text.startswith(("No Learning Centre", "The Learning Centre has no")):
+            return text
+        sid = self.src(f"Learning Centre: {question_id or topic}", "EquityPilot Learning Centre", "calculated",
+                       retrieved=f"content reviewed {CU.REVIEWED}")
+        return f"[{sid}] " + text
+
     def t_explain_metric(self, term: str) -> str:
         if not isinstance(term, str) or not term.strip():
             raise ToolError("term is required.")
@@ -524,6 +544,9 @@ How to answer:
 - No buy/sell/hold calls, target prices or personal advice (SEBI rules for investment advisers). If asked, explain the evidence on both
   sides and what an investor might check, and say you cannot recommend.
 - Intrinsic-value or DCF numbers are model estimates that depend on assumptions; never present them as exact.
+- Learning questions (explain a concept more simply, a formula step by step, the difference between two concepts, practice
+  questions, why a quiz answer is wrong): call learning_content and base the explanation on it. Label any numbers you make up as an
+  illustrative example, not company data. Never invent formulas or regulatory rules; if the Learning Centre does not cover a point, say so.
 Today is {today}."""
 
 
@@ -569,6 +592,9 @@ def plan_prefetch(question: str, symbol: str | None, history: list[dict] | None 
     if NEWS_RE.search(q):
         sec = "regulation" if re.search(r"\b(sebi|regulat)", q, re.I) else "economy" if re.search(r"\b(rbi|economy|inflation|repo)", q, re.I) else "disclosures"
         return [("latest_news", {"section": sec, "limit": 8})], notes
+    learn = LRN.detect(q, history)
+    if learn:
+        return [("learning_content", {"question_id": learn["qid"]} if learn["intent"] == "quiz" else {"topic": q})], notes
     return [], notes
 
 
@@ -894,11 +920,35 @@ def _conversation_companies(history: list[dict] | None) -> list[str]:
     return []
 
 
+def _learning_answer(q: str, history: list[dict] | None, tb: ToolBox) -> str | None:
+    """Learning-mode answer from the curriculum, or None. Follow-ups such as 'explain it more simply' in a conversation about
+    a company stay with the company, unless the question itself names a concept."""
+    if "recommendation" in offline.detect_intents(q):
+        return None
+    if not CU.find_terms(q) and not LRN.QID_RE.search(q) and _conversation_companies(history):
+        return None
+    res = LRN.answer(q, history)
+    if not res:
+        return None
+    text, lids = res
+    for lid in lids:
+        les = CU.LESSONS.get(lid)
+        if les:
+            tb.src(f"Learning Centre lesson: {les['title']}", "EquityPilot Learning Centre", "calculated",
+                   retrieved=f"content reviewed {CU.REVIEWED}")
+    return text
+
+
 def _offline_answer(question: str, symbol: str | None, tb: ToolBox, history: list[dict] | None = None) -> tuple[str, list[str]]:
     """Returns (markdown answer, steps taken)."""
     q = question.strip()
     steps: list[str] = []
     named, notes = find_companies(q)
+    if not named:
+        learned = _learning_answer(q, history, tb)
+        if learned:
+            steps.append("Using the Learning Centre")
+            return learned, steps
     short_follow_up = len(re.findall(r"\w+", q)) <= 6 and not MARKET_RE.search(q)
     if history and (REFERS_BACK_RE.search(q) or (not named and short_follow_up)):
         earlier = _conversation_companies(history)
@@ -1021,6 +1071,11 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox, history: lis
                 "next to the question box. I can then summarise it or answer questions with quotes and page numbers."), steps
     # concept or nothing matched
     a = offline.answer(None, q)
+    term = CU.find_term(q)
+    if term and not a.startswith("Select a company first"):
+        more = LRN.lesson_line([term])
+        if more:
+            a += "\n\n" + more
     if a.startswith("Select a company first"):
         a = (HELP_PREFIX + "\n- **Any company** - e.g. *How has Infosys grown?*, *Is Tata Motors' debt high?*\n"
              "- **Comparisons** - *Compare TCS and Infosys*\n- **The market** - *How is the market today?*, *Top gainers*\n"

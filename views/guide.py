@@ -82,7 +82,7 @@ with tab_mod:
                                                   "Upload statements (template provided) → review/correct → save with source reference.",
                                                   "Upload NSE/BSE price CSVs; upload PDFs for text search and the assistant.",
                                                   "Choose which companies are in the screener universe; refresh data."]),
-        "Learning Centre": ("views/learning.py", ["Eight modules with formulas, live worked examples and quizzes; glossary search; progress tracking."]),
+        "Learning Centre": ("views/learning.py", ["Thirteen modules at beginner, intermediate and advanced level with formulas, worked examples and quizzes; glossary search; progress tracking."]),
     }
     pick = st.selectbox("Module", list(GUIDE))
     page, steps = GUIDE[pick]

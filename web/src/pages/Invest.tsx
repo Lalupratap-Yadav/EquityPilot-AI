@@ -107,7 +107,7 @@ export default function Invest() {
           </Card>
           <Card title={<span className="inline-flex items-center gap-1.5"><Lightbulb className="h-4 w-4 text-saffron-500" />Learning tips</span>} subtitle="Educational observations, not investment advice">
             <ul className="space-y-2 text-sm">{d.tips.map((t) => <li key={t} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-saffron-500" />{t}</li>)}</ul>
-            <Link to="/learn?module=risk" className="mt-3 inline-block text-sm font-medium text-brand-600 hover:underline">Learn about diversification →</Link>
+            <Link to="/learn?lesson=portfolio-diversification" className="mt-3 inline-block text-sm font-medium text-brand-600 hover:underline">Learn about diversification →</Link>
           </Card>
           <Card title={<span className="inline-flex items-center gap-1.5"><Award className="h-4 w-4 text-brand-600" />Achievements</span>}>
             <div className="grid grid-cols-2 gap-2">{d.achievements.map((a) => (
