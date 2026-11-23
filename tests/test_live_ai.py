@@ -151,7 +151,7 @@ def test_websocket_sends_snapshot_then_only_changes(client, monkeypatch):
 
 def test_health_reports_market_data_provider(client):
     h = client.get("/api/health").json()
-    assert h["version"] == "2.6.0" and h["market_data"]["realtime"] is False and "provider" in h["market_data"]
+    assert h["version"] == "2.7.0" and h["market_data"]["realtime"] is False and "provider" in h["market_data"]
 
 
 # ------------------------------------------------------------------ research agent: free offline router
@@ -259,6 +259,7 @@ class _FakeClient:
     def __init__(self, script):
         self.script, self.calls = list(script), []
         self.messages = SimpleNamespace(stream=self._stream)
+        self.beta = SimpleNamespace(messages=self.messages)    # the agent streams on the beta endpoint (refusal fallbacks)
 
     def _stream(self, **kw):
         self.calls.append(kw)
@@ -280,7 +281,7 @@ def test_claude_agent_runs_tools_and_streams(monkeypatch):
     fake = _FakeClient(script)
     monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: fake)
     tb = A.ToolBox()
-    events = list(A.run_claude("Compare alpha and beta", [], None, tb, "claude-opus-5-5", "sk-test", []))
+    events = list(A.run_claude("Compare alpha and beta", [], None, tb, "claude-opus-5-5", "sk-test", [], prefetch=False))
     kinds = [e["type"] for e in events]
     assert kinds[0] == "delta" and "interim" in kinds and "status" in kinds and kinds[-1] == "final"
     final = events[-1]
@@ -298,7 +299,7 @@ def test_claude_agent_reports_tool_errors_to_the_model(monkeypatch):
               _msg([_Block(type="text", text="That data is not available.")], "end_turn")]
     fake = _FakeClient(script)
     monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: fake)
-    events = list(A.run_claude("q", [], None, A.ToolBox(), "claude-haiku-5-5", "k", []))
+    events = list(A.run_claude("q", [], None, A.ToolBox(), "claude-haiku-5-5", "k", [], prefetch=False))
     res = fake.calls[1]["messages"][-1]["content"][0]
     assert res["is_error"] is True and "symbol is required" in res["content"]
     assert "thinking" not in fake.calls[0] and events[-1]["text"] == "That data is not available."
@@ -310,5 +311,5 @@ def test_claude_agent_never_runs_truncated_tool_input(monkeypatch):
     fake = _FakeClient(script)
     monkeypatch.setattr(anthropic, "Anthropic", lambda **kw: fake)
     tb = A.ToolBox()
-    events = list(A.run_claude("q", [], None, tb, "claude-opus-5-5", "k", []))
+    events = list(A.run_claude("q", [], None, tb, "claude-opus-5-5", "k", [], prefetch=False))
     assert len(fake.calls) == 1 and tb.texts == [] and "ran out of room" in events[-1]["meta"]["note"]

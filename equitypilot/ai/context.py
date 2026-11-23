@@ -66,6 +66,29 @@ def _amt(v, cur):
     return f"₹{F.amount(v, cur)} Cr" if (cur or "INR") == "INR" else f"{cur} {F.amount(v, cur)} mn"
 
 
+def _results_filings(symbol: str) -> list[str]:
+    """Latest results the company filed with NSE and its next confirmed results board meeting - dates exactly as the
+    exchange records them, never estimated."""
+    try:
+        from ..data import events as EV
+        filed = [f for f in EV.results_filed(400, symbol) if f["kind"] == "results"]
+        meets = [m for m in EV.board_meetings(400, symbol) if m["results"]]
+        today = EV.today_ist().isoformat()
+    except Exception:          # the filings feed is optional context
+        return []
+    filed.sort(key=lambda f: f["filed"] or "", reverse=True)
+    upcoming = sorted((m for m in meets if m["meeting_date"] >= today), key=lambda m: m["meeting_date"])
+    out = []
+    for f in filed[:2]:
+        out.append(f"Results filed on {(f['filed'] or '')[:10]}: {f['subject'] or 'financial results'}"
+                   + (f"; period {f['period']}" if f.get("period") else "") + (f"; {f['basis']}" if f.get("basis") else "")
+                   + (f"; filing: {f['url']}" if f.get("url") else ""))
+    for m in upcoming[:1]:
+        out.append(f"Next board meeting to consider results (date confirmed by the company): {m['meeting_date']}"
+                   + (f" - {m['purpose'][:140]}" if m.get("purpose") else ""))
+    return out
+
+
 def build_context(symbol: str, question: str = "", doc_ids: list[int] | None = None,
                   include_news: bool = True, max_doc_chars: int = 12000) -> ResearchContext | None:
     company = repo.get_company(symbol)
@@ -136,6 +159,29 @@ def build_context(symbol: str, question: str = "", doc_ids: list[int] | None = N
         if R.is_financial(company):
             ctx.add("Sector note", "This is a financial-sector company: EV/EBITDA, debt/equity and current ratio are not "
                     "meaningful; use P/B, ROE and asset-quality data from filings.", "EquityPilot methodology", "calculated")
+
+    # ---- quarterly results (provider statements) and the exchange filings about them
+    ctx.data["fq"] = fq
+    if fq is not None and not fq.empty:
+        qs = R.quarterly_summary(fq).tail(5)
+        if not qs.empty:
+            cur = fq.currency
+            ql = []
+            for p, r in qs.iterrows():
+                ql.append(f"Quarter ended {pd.Timestamp(p).strftime('%b %Y')}: revenue {_amt(r['revenue'], cur)} "
+                          f"(vs previous quarter {F.pct(r['revenue_qoq'], 1, True)}, vs same quarter last year {F.pct(r['revenue_yoy'], 1, True)}); "
+                          f"EBITDA {_amt(r['ebitda'], cur)}; net profit {_amt(r['net_income'], cur)} "
+                          f"(vs previous quarter {F.pct(r['net_income_qoq'], 1, True)}, vs same quarter last year {F.pct(r['net_income_yoy'], 1, True)}); "
+                          f"EBITDA margin {F.pct(r['ebitda_margin'])} (same quarter last year {F.pct(r['ebitda_margin_ly'])}); "
+                          f"net margin {F.pct(r['net_margin'])}; diluted EPS {F.num(r['eps'])}")
+            ctx.add(f"Quarterly results ({fq.basis} basis, currency {cur})", "\n".join(ql), "; ".join(fq.sources) or "—",
+                    fq.data_types[0] if fq.data_types else dtype_default, fq.source_urls[0] if fq.source_urls else None,
+                    F.ist(fq.fetched_at))
+    if not sample:
+        lines = _results_filings(symbol)
+        if lines:
+            ctx.add("Exchange filings about results", "\n".join(lines), "NSE corporate announcements (RSS)", "official",
+                    "https://www.nseindia.com/companies-listing/corporate-filings-financial-results")
 
     # ---- bank metrics (quarterly disclosures entered by the user)
     bm = repo.get_bank_metrics(symbol)
@@ -264,6 +310,56 @@ def _norm_numbers(text: str) -> set[str]:
         out.add(f"{round(v):d}")
         out.add(f"{v:.1f}".rstrip("0").rstrip("."))
     return out
+
+
+CITE_RE = re.compile(r"\[((?:[TS]\d+)(?:\s*[,;]\s*[TS]\d+)*)\]")
+_CALC_LINE_RE = re.compile(r"=|\bcalculat|\bformula\b|×|\bdivided by\b|\bminus\b|\bdifference\b", re.I)
+
+
+def _counted_figures(text: str) -> list[tuple[str, float]]:
+    out = []
+    for m in NUM_RE.findall(text):
+        s = m.replace(",", "").lstrip("+")
+        try:
+            v = float(s)
+        except ValueError:
+            continue
+        if abs(v) < 10 and "." not in s or (1990 <= v <= 2100 and "." not in s):
+            continue                                   # small counts and years
+        out.append((m, v))
+    return out
+
+
+def _traced(v: float, ctx_nums: set[str]) -> bool:
+    return bool({f"{v:.2f}".rstrip("0").rstrip("."), f"{round(v):d}", f"{v:.1f}".rstrip("0").rstrip(".")} & ctx_nums)
+
+
+def grounding_report(answer: str, context_text: str, source_ids: list[str] | None = None) -> dict:
+    """Checks an AI answer against the data it was given, so problems are shown with the answer, never hidden:
+    - `untraced`: figures that appear nowhere in the retrieved data;
+    - `calculated`: figures on a line marked as a calculation (with '=' or 'calculated') whose other figures are traced -
+      the model computed them from cited inputs, which the answer must show;
+    - `unknown_citations`: source IDs cited in the answer that were never retrieved;
+    - `uncited_lines`: lines that state figures but cite no source."""
+    ctx_nums = _norm_numbers(context_text)
+    total, untraced, calculated, uncited = 0, [], [], 0
+    for line in answer.splitlines():
+        figs = _counted_figures(line)
+        if not figs:
+            continue
+        total += len(figs)
+        traced = [_traced(v, ctx_nums) for _, v in figs]
+        calc_line = bool(_CALC_LINE_RE.search(line)) and any(traced)
+        for (raw, _), ok in zip(figs, traced):
+            if not ok:
+                (calculated if calc_line else untraced).append(raw)
+        if not CITE_RE.search(line) and not line.lstrip().startswith(("|---", "#")):
+            uncited += 1
+    known = set(source_ids or [])
+    cited = {c for grp in CITE_RE.findall(answer) for c in re.split(r"\s*[,;]\s*", grp)}
+    unknown = sorted(cited - known) if known else []
+    return {"figures": total, "untraced": untraced[:10], "calculated": calculated[:10], "unknown_citations": unknown[:10],
+            "uncited_lines": uncited}
 
 
 def grounding_check(answer: str, context_text: str) -> tuple[int, list[str]]:

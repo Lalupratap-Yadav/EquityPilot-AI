@@ -18,6 +18,7 @@ import inspect
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
@@ -28,7 +29,7 @@ from equitypilot import config
 from equitypilot import formatting as F
 from equitypilot.ai import offline, rag
 from equitypilot.ai import providers as P
-from equitypilot.ai.context import build_context, grounding_check
+from equitypilot.ai.context import build_context, grounding_report
 from equitypilot.analytics import technicals as T
 from equitypilot.analytics.screener import METRIC_COLUMNS
 from equitypilot.content import metrics_guide as MG
@@ -140,18 +141,27 @@ class ToolBox:
         self.texts: list[str] = []
         self.fetched = 0
         self.symbols_used: list[str] = []
+        self._lock = threading.RLock()        # tools may run in parallel threads: IDs and lists stay consistent
 
     # -- bookkeeping
     def src(self, content: str, source: str, dtype: str, link: str | None = None, retrieved: str | None = None,
             excerpt: str | None = None) -> str:
-        sid = f"T{len(self.sources) + 1}"
         label = config.DATA_TYPES.get(dtype, (dtype,))[0]
-        self.sources.append({"ID": sid, "Content": content, "Source": source, "Type": label, "Retrieved": retrieved or "—",
-                             "Link": link, **({"excerpt": excerpt} if excerpt else {})})
+        with self._lock:
+            sid = f"T{len(self.sources) + 1}"
+            self.sources.append({"ID": sid, "Content": content, "Source": source, "Type": label, "Retrieved": retrieved or "—",
+                                 "Link": link, **({"excerpt": excerpt} if excerpt else {})})
         return sid
 
     def describe(self, name: str, args: dict) -> str:
-        a = {k: (", ".join(v) if isinstance(v, list) else v) for k, v in (args or {}).items()}
+        def show(v):
+            if isinstance(v, list):
+                return ", ".join(f"{_label(x.get('metric', ''))} {x.get('op', '')} {fmt_metric(x.get('metric', ''), x.get('value'))}"
+                                 if isinstance(x, dict) else str(x) for x in v)
+            return v
+        a = {k: show(v) for k, v in (args or {}).items()}
+        if name == "screen_companies" and a.get("filters"):
+            return f"Screening tracked companies: {a['filters']}"
         try:
             return STATUS_TEXT.get(name, name).format(**{"query": "", "symbol": "", "symbols": "", "term": "", **a})
         except (KeyError, IndexError, ValueError):
@@ -168,8 +178,27 @@ class ToolBox:
             raise ToolError(f"Unknown tool '{name}'.")
         params = set(inspect.signature(fn).parameters)
         out = fn(**{k: v for k, v in args.items() if k in params})
-        self.texts.append(out)
+        with self._lock:
+            self.texts.append(out)
         return out
+
+    def run_many(self, calls: list[tuple[str, dict]]) -> list[tuple[str | None, str | None]]:
+        """Independent tool calls at once (threads; the data reads release the interpreter for I/O). Returns
+        (result, error message) per call, in the order given."""
+        def one(call):
+            name, args = call
+            try:
+                return self.run(name, args), None
+            except ToolError as exc:
+                return None, str(exc)
+            except Exception as exc:              # a data problem must not kill the conversation
+                log.exception("tool %s failed", name)
+                return None, f"tool failed ({type(exc).__name__})"
+        if len(calls) <= 1:
+            return [one(c) for c in calls]
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(4, len(calls))) as ex:
+            return list(ex.map(one, calls))
 
     # -- symbol handling
     def resolve(self, raw: str) -> str:
@@ -201,10 +230,11 @@ class ToolBox:
             raise ToolError(f"{sym} is not a company in EquityPilot.")
         if config.OFFLINE or not self.allow_fetch:
             raise ToolError(f"{sym} is not tracked yet. Open its company page once to load its data.")
-        if self.fetched >= MAX_NEW_COMPANIES:
-            raise ToolError(f"{sym} is not tracked yet and the per-question fetch limit was reached.")
+        with self._lock:
+            if self.fetched >= MAX_NEW_COMPANIES:
+                raise ToolError(f"{sym} is not tracked yet and the per-question fetch limit was reached.")
+            self.fetched += 1
         ok, msg, sym2 = repo.add_company(sym)
-        self.fetched += 1
         if not ok:
             raise ToolError(f"Could not load {sym} from the data provider: {msg}")
         try:
@@ -369,6 +399,11 @@ class ToolBox:
         lines = [f"| Company | {' | '.join(_label(k) for k in cols)} |", "|---" * (len(cols) + 1) + "|"]
         for _, r in df.iterrows():
             lines.append(f"| {r['name']} ({r['symbol']}) | " + " | ".join(fmt_metric(k, r.get(k)) for k in cols) + " |")
+        odd = [str(r["name"]) for _, r in df.iterrows()
+               if pd.notna(pd.to_numeric(r.get("pe"), errors="coerce")) and 0 < float(r.get("pe")) < 3]
+        if odd:
+            lines.append(f"\nCheck before relying on it: a P/E below 3 ({', '.join(odd)}) usually means net profit includes a "
+                         "one-off gain (for example from a demerger or an asset sale); see the results filing.")
         return (f"[{sid}] Screen over the {universe} companies EquityPilot tracks (not the whole exchange). "
                 f"Filters: {'; '.join(applied) or 'none'}. Sorted by {_label(key)} {'ascending' if ascending else 'descending'}. "
                 f"{total} matched; showing {len(df)}.\n" + ("\n".join(lines) if len(df) else "No company matched.")
@@ -473,8 +508,15 @@ How to work:
 
 How to answer:
 - Cite every fact with the tool-result ID in square brackets, e.g. [T3]. Cite each ID only where it supports the sentence.
-- Structure (omit empty sections): a 2-3 sentence **Summary** in plain English; **Facts** (cited); **Calculations** (formula and
-  inputs, only if you computed something); **Interpretation** (clearly your analysis); **Risks and limitations**.
+- Start with **Answer**: 1-3 sentences that answer the question directly in plain English, with the key figure, its period and unit.
+- Then only the sections that add something:
+  **Key figures** - verified facts from tool results, each cited, with period (FY2026 = year to March 2026, or the quarter) and unit;
+  **Calculations** - anything you computed yourself: formula, cited inputs and result (never present a calculated number as reported);
+  **What it means** - your interpretation in simple English, clearly your analysis, jargon explained the first time;
+  **Risks and limitations** - data gaps, third-party data, one-off items, mergers or anything that could mislead;
+  **Sources and periods** - sources used, data timestamps, currency and units, consolidated/standalone basis when stated.
+- Be concise by default (about 250 words or less); give more detail only when the user asks for it.
+- Copy figures exactly as they appear in the tool results (same rounding and units); if you convert a unit, show the original too.
 - Prefer compact markdown tables for comparisons. Use Indian conventions: ₹, crore, lakh, FY2026 = year ending March 2026.
 - Explain jargon briefly the first time (e.g. "ROE - profit earned on shareholders' money").
 - State data labels: prices are DELAYED or end-of-day unless the tool says real-time; SAMPLE companies are fictional; third-party
@@ -498,29 +540,104 @@ def _user_message(question: str, symbol: str | None, doc_names: list[str]) -> st
     return question + ("\n\n(" + "; ".join(extra) + ")" if extra else "")
 
 
+def plan_prefetch(question: str, symbol: str | None, history: list[dict] | None = None) -> tuple[list[tuple[str, dict]], list[str]]:
+    """Deterministic routing for predictable questions: the first tool calls the agent would make anyway, run before
+    the first model call so a typical question is answered in one model turn instead of two. Returns (calls, notes)."""
+    q = question.strip()
+    named, notes = find_companies(q)
+    if history and not named and (REFERS_BACK_RE.search(q) or len(re.findall(r"\w+", q)) <= 6):
+        earlier = _conversation_companies(history)
+        named = earlier[:6] if len(earlier) > 1 and COMPARATIVE_RE.search(q) else earlier[:1]
+    intents = offline.detect_intents(q)
+    if not named and symbol and not MARKET_RE.search(q) and not set(intents) <= {"concept"}:
+        named = [symbol]
+    if len(named) >= 2:
+        return [("compare_companies", {"symbols": named[:6]})], notes
+    if named:
+        calls = [("company_research", {"symbol": named[0]})]
+        if PERF_RE.search(q):
+            calls.append(("price_performance", {"symbol": named[0]}))
+        if NEWS_RE.search(q):
+            calls.append(("latest_news", {"symbol": named[0], "limit": 8}))
+        return calls, notes
+    thresholds = parse_screen_filters(q)
+    if thresholds:
+        return [("screen_companies", {"filters": thresholds, "sort_by": thresholds[0]["metric"],
+                                      "ascending": thresholds[0]["op"] in ("<", "<=")})], notes
+    if MARKET_RE.search(q) and not SCREEN_RE.search(q):
+        return [("market_overview", {})], notes
+    if NEWS_RE.search(q):
+        sec = "regulation" if re.search(r"\b(sebi|regulat)", q, re.I) else "economy" if re.search(r"\b(rbi|economy|inflation|repo)", q, re.I) else "disclosures"
+        return [("latest_news", {"section": sec, "limit": 8})], notes
+    return [], notes
+
+
+def _echo_content(content: list) -> tuple[list, list]:
+    """Blocks to send back after a turn, and the tool calls to run. After a mid-output refusal fallback, thinking,
+    tool-use and other model-internal blocks before the last `fallback` block belong to the declined attempt: they are
+    not echoed or run (text blocks and the `fallback` block itself stay where they were)."""
+    cut = max((i for i, b in enumerate(content) if getattr(b, "type", None) == "fallback"), default=-1)
+    echo = [b for i, b in enumerate(content) if i > cut or getattr(b, "type", None) in ("text", "fallback")]
+    live = [b for i, b in enumerate(content) if i > cut and getattr(b, "type", None) == "tool_use"]
+    return echo, live
+
+
+def _usage_parts(resp, model: str) -> list[tuple[str, int, int, int, int]]:
+    """(model, input, output, cache read, cache write) per attempt - per-attempt usage when a fallback ran."""
+    u = resp.usage
+    parts = []
+    for it in getattr(u, "iterations", None) or []:
+        if getattr(it, "type", None) in ("message", "fallback_message"):
+            parts.append((getattr(it, "model", None) or model, it.input_tokens or 0, it.output_tokens or 0,
+                          getattr(it, "cache_read_input_tokens", 0) or 0, getattr(it, "cache_creation_input_tokens", 0) or 0))
+    if not parts:
+        parts.append((model, u.input_tokens or 0, u.output_tokens or 0, getattr(u, "cache_read_input_tokens", 0) or 0,
+                      getattr(u, "cache_creation_input_tokens", 0) or 0))
+    return parts
+
+
+FALLBACK_MODELS = ("claude-opus", "claude-sonnet", "claude-fable")
+
+
 def run_claude(question: str, history: list[dict], symbol: str | None, tb: ToolBox, model: str, api_key: str,
-               doc_names: list[str]) -> Iterator[dict]:
+               doc_names: list[str], effort: str = "medium", prefetch: bool = True) -> Iterator[dict]:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key, max_retries=2, timeout=180)
     system = [{"type": "text", "text": AGENT_PROMPT.replace("{today}", datetime.now(IST).strftime("%d %B %Y")),
                "cache_control": {"type": "ephemeral"}}]
-    messages: list = [*history, {"role": "user", "content": _user_message(question, symbol, doc_names)}]
-    usage = {"input": 0, "output": 0, "cache_read": 0}
-    extra = {"thinking": {"type": "adaptive"}} if model.startswith(("claude-opus", "claude-sonnet", "claude-fable")) else {}
-    final_text, retries, note = "", 0, None
+    content = _user_message(question, symbol, doc_names)
+    plan, notes = plan_prefetch(question, symbol, history) if prefetch else ([], [])
+    if plan:                    # deterministic retrieval first, in parallel; the model calls tools only for what is missing
+        for name, args in plan:
+            yield {"type": "status", "text": tb.describe(name, args)}
+        results = tb.run_many(plan)
+        got = [res if res is not None else f"Error from {name}: {err}" for (name, _), (res, err) in zip(plan, results)]
+        content += ("\n\nResearch data EquityPilot already retrieved for this question (cite the [T#] IDs; call tools only "
+                    "for anything still missing):\n\n" + "\n\n".join(got)
+                    + ("\n\nNotes on company names: " + " ".join(notes) if notes else ""))
+    messages: list = [*history, {"role": "user", "content": content}]
+    parts: list[tuple[str, int, int, int, int]] = []
+    extra = {"thinking": {"type": "adaptive"}} if model.startswith(FALLBACK_MODELS) else {}
+    if model.startswith(FALLBACK_MODELS):
+        # server-side refusal fallback: if a safety classifier declines, the API re-runs the request on Anthropic's
+        # recommended model for that refusal category, inside the same call
+        extra.update(betas=["server-side-fallback-2026-07-01"], fallbacks="default")
+    final_text, retries, note, served_by = "", 0, None, None
     turn = 0
     while turn < MAX_TURNS:
         turn += 1
         text_this_turn = []
         try:
-            with client.messages.stream(model=model, max_tokens=16000, system=system, tools=TOOLS, messages=messages,
-                                        **extra) as stream:
+            with client.beta.messages.stream(model=model, max_tokens=16000, system=system, tools=TOOLS, messages=messages,
+                                             output_config={"effort": effort}, **extra) as stream:
                 for event in stream:
                     if event.type == "text":
                         text_this_turn.append(event.text)
                         yield {"type": "delta", "text": event.text}
                 resp = stream.get_final_message()
             retries = 0
+        except anthropic.APIError as exc:        # explained to the user; the free offline engine answers instead
+            raise P.ProviderError(P.explain_anthropic_error(exc)) from exc
         except ValueError:              # tool input the SDK could not parse at all: re-issue the turn (bounded)
             retries += 1
             if retries > 2:
@@ -528,11 +645,10 @@ def run_claude(question: str, history: list[dict], symbol: str | None, tb: ToolB
             yield {"type": "reset"}
             turn -= 1
             continue
-        u = resp.usage
-        usage["input"] += (u.input_tokens or 0) + (getattr(u, "cache_creation_input_tokens", 0) or 0)
-        usage["cache_read"] += getattr(u, "cache_read_input_tokens", 0) or 0
-        usage["output"] += u.output_tokens or 0
-        tool_uses = [b for b in resp.content if b.type == "tool_use"]
+        parts += _usage_parts(resp, model)
+        if getattr(resp, "model", None) and resp.model != model:
+            served_by = resp.model
+        echo, tool_uses = _echo_content(list(resp.content))
         if resp.stop_reason == "refusal":
             note = "The model declined part of this request."
             final_text = "".join(text_this_turn) or "The model declined to answer this request. Try rephrasing the question."
@@ -548,26 +664,27 @@ def run_claude(question: str, history: list[dict], symbol: str | None, tb: ToolB
             break
         if text_this_turn:
             yield {"type": "interim", "text": "".join(text_this_turn)}
-        messages.append({"role": "assistant", "content": resp.content})
-        results = []
+        messages.append({"role": "assistant", "content": echo})
         for b in tool_uses:
             yield {"type": "status", "text": tb.describe(b.name, b.input if isinstance(b.input, dict) else {})}
-            try:
-                results.append({"type": "tool_result", "tool_use_id": b.id, "content": tb.run(b.name, b.input)})
-            except ToolError as exc:
-                results.append({"type": "tool_result", "tool_use_id": b.id, "content": f"Error: {exc}", "is_error": True})
-            except Exception as exc:          # a data problem must not kill the conversation
-                log.exception("tool %s failed", b.name)
-                results.append({"type": "tool_result", "tool_use_id": b.id, "content": f"Error: tool failed ({type(exc).__name__}).",
-                                "is_error": True})
+        outcomes = tb.run_many([(b.name, b.input) for b in tool_uses])     # parallel tool calls run at once
+        results = []
+        for b, (res, err) in zip(tool_uses, outcomes):
+            if res is not None:
+                results.append({"type": "tool_result", "tool_use_id": b.id, "content": res})
+            else:
+                results.append({"type": "tool_result", "tool_use_id": b.id, "content": f"Error: {err}", "is_error": True})
         messages.append({"role": "user", "content": results})
     else:
         note = "Stopped after the maximum number of research steps."
-    cost = P.estimate_cost_usd(model, usage["input"] + usage["cache_read"], usage["output"])
-    total, untraced = grounding_check(final_text, tb.context_text())
+    cost = P.cost_of(parts)
+    if served_by:
+        note = ((note + " ") if note else "") + (f"Part of this answer was written by {served_by} after {model} declined the "
+                                                  "request (automatic server-side fallback).")
+    report = grounding_report(final_text, tb.context_text(), [x["ID"] for x in tb.sources])
     yield {"type": "final", "text": final_text, "meta": {
-        "engine": model, "tokens": [usage["input"] + usage["cache_read"], usage["output"]], "cost_usd": cost,
-        "grounding": {"figures": total, "untraced": untraced[:10]}, "note": note, "steps": turn}}
+        "engine": model, "tokens": [sum(x[1] + x[3] + x[4] for x in parts), sum(x[2] for x in parts)], "cost_usd": cost,
+        "grounding": report, "note": note, "steps": turn, "prefetched": len(plan)}}
 
 
 # ------------------------------------------------------------------ free offline analyst: rule-based router over the same tools
@@ -618,6 +735,26 @@ idea fact vs. long term short future outlook why when where much many more most 
 rose up down hello hi hey thanks thank state order impact effect news update updates""".split())
 
 
+# Everyday words that also begin company names ("have" -> Havells, "indian" -> Indian Oil, "asian" -> Asian Paints,
+# "united" -> United Spirits). On their own they may name a company only by an exact match of a symbol or brand
+# ("titan", "reliance"), never by a prefix or a spelling correction. Inside a longer name ("Indian Oil") they still count.
+COMMON_WORDS = set("""have has had having indian india national global general simple plain easy english hindi major minor
+main key big small large huge good great nice fine latest current recent new old next last first second third final
+happening going doing done said say tell show give make made take see look get got want need know think explain describe
+detail details information info data annual results result update news story stories report reports summary summarise
+summarize question answer help please could would should can will may might must also just only very much many more
+most less least some any each every other another such same different own above below over under between across after
+before during since until within without asian american us usa china chinese europe european japan japanese global world
+foreign international united states union central western eastern northern southern north south east west premier prime
+royal golden gold silver crude rupee dollar rate rates inflation repo budget tax gst ipo ipos fii fiis dii mutual fund funds
+etf etfs bond bonds yield gdp economy policy election elections sector sectors stock market markets trade trading trader
+investors investor money cash profit profits loss losses sales revenue income value price growth future outlook today
+week month year quarter daily weekly monthly yearly people public private limited ltd india's indian's
+cap caps capitalisation capitalization lakh lakhs crore crores cr mn bn billion million trillion percent times
+roe roce eps ebitda ebit pat margin margins ratio ratios yield yields dividend dividends coverage turnover equity debt
+leverage gearing payout cagr fcf cfo capex assets asset liabilities liquidity valuation multiple multiples score""".split())
+
+
 def find_companies(question: str, limit: int = 6) -> tuple[list[str], list[str]]:
     """Companies named in a question - by name, brand, everyday name or symbol, with typo tolerance.
 
@@ -642,7 +779,7 @@ def find_companies(question: str, limit: int = 6) -> tuple[list[str], list[str]]
             if not res:
                 continue
             top = res[0]
-            if has_stop:
+            if has_stop or (j - i == 1 and span[0] in COMMON_WORDS):
                 ok = top["score"] >= 98
             else:
                 ok = top["score"] >= 80 and (top["score"] >= 95 or top.get("tracked") or (top.get("rank") or 99999) <= 500)
@@ -661,10 +798,54 @@ def find_companies(question: str, limit: int = 6) -> tuple[list[str], list[str]]
             if same and top["score"] <= 90:
                 notes.append(f"“{phrase}” matches several companies, so I used **{top['name']}** (the largest tracked one). "
                              f"Others: {', '.join(r['name'] for r in same[:4])}. Name the exact company to switch.")
+            elif top["score"] < 100 and len(res) > 1 and res[1].get("tracked") and res[1]["score"] >= top["score"] - 8 \
+                    and res[1]["symbol"] != top["symbol"]:
+                notes.append(f"“{phrase}” also matches **{res[1]['name']}** ({res[1]['symbol']}). I used **{top['name']}** "
+                             f"({top['symbol']}); name the other company to switch.")
             if top.get("corrected"):
                 notes.append(f"Read “{phrase}” as “{top['corrected']}”.")
         i = j
     return found, notes
+
+
+_OPS = [(r">=|at least|not less than|no less than|minimum(?: of)?|min", ">="),
+        (r"<=|at most|not more than|no more than|maximum(?: of)?|max|up to|upto", "<="),
+        (r">|above|over|greater than|more than|higher than|exceed(?:ing|s)?|bigger than|better than", ">"),
+        (r"<|below|under|less than|lower than|smaller than|beneath", "<")]
+_OP_RE = "|".join(f"(?:{pat})" for pat, _ in _OPS)
+_SCREEN_EXTRA = [(r"\b(3|three)[- ]?y(ea)?r revenue (growth|cagr)\b|\brevenue cagr\b|\bsales cagr\b", "revenue_cagr_3y"),
+                 (r"\b(3|three)[- ]?y(ea)?r (profit|earnings) (growth|cagr)\b|\bprofit cagr\b", "profit_cagr_3y"),
+                 (r"\bpiotroski\b|\bf-?score\b", "piotroski"), (r"\bshare price\b|\bprice\b", "price")]
+
+
+def parse_screen_filters(question: str) -> list[dict]:
+    """Numeric conditions in a question, e.g. 'ROE above 20%' -> {metric: roe, op: '>', value: 0.20}. Only metrics the
+    screener holds are used. Percent metrics accept '20%' or '20' (= 20%); amounts default to crore ('1 lakh crore' too)."""
+    ql = question.lower().replace("per cent", "%").replace("percent", "%")
+    found: dict[str, dict] = {}
+    where: dict[str, int] = {}
+    for pat, key in _SCREEN_EXTRA + offline.METRIC_ALIASES:
+        if key not in METRIC_COLUMNS or key in found:
+            continue
+        for m in re.finditer(pat, ql):
+            tail = ql[m.end(): m.end() + 48]
+            mm = re.match(rf"\s*(?:ratio|is|of|was|at|level|levels|a|an)?\s*({_OP_RE})\s*(?:of\s*)?(-?\d[\d,]*(?:\.\d+)?)\s*"
+                          r"(%|x|times|lakh crore|lakh cr|l cr|crore|cr)?", tail)
+            if not mm:
+                continue
+            op = next(o for pat2, o in _OPS if re.fullmatch(pat2, mm.group(1)))
+            num = float(mm.group(2).replace(",", ""))
+            unit, kind = mm.group(3) or "", METRIC_COLUMNS[key][1]
+            if kind == "pct":
+                value = num / 100 if (unit == "%" or abs(num) >= 1) else num
+            elif kind == "cr":
+                value = num * (1e12 if unit.startswith(("lakh", "l ")) else 1e7)
+            else:
+                value = num
+            found[key] = {"metric": key, "op": op, "value": value}
+            where[key] = m.start()
+            break
+    return sorted(found.values(), key=lambda f: where[f["metric"]])     # in the order the question states them
 
 
 def mentioned_companies(question: str, limit: int = 6) -> list[str]:
@@ -697,12 +878,40 @@ def _snapshot_md(tb: "ToolBox", sym: str) -> str:
     return f"**{r.get('name', sym)} ({sym}) at a glance** [{sid}]\n\n" + "\n".join(rows)
 
 
-def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str, list[str]]:
+COMPARATIVE_RE = re.compile(r"\b(which|better|best|worse|higher|highest|lower|lowest|more|less|stronger|weaker|cheaper|"
+                            r"costlier|bigger|smaller|faster|slower|vs\.?|versus|compare|comparison|between)\b", re.I)
+REFERS_BACK_RE = re.compile(r"\b(it|its|it's|they|their|them|this company|that company|the company|this stock|that stock|"
+                            r"the stock|same company|what about|how about|and (its|the|their))\b", re.I)
+
+
+def _conversation_companies(history: list[dict] | None) -> list[str]:
+    """Companies in the most recent earlier user message that named any."""
+    for h in reversed(history or []):
+        if h.get("role") == "user":
+            found = find_companies(str(h.get("content") or ""))[0]
+            if found:
+                return found
+    return []
+
+
+def _offline_answer(question: str, symbol: str | None, tb: ToolBox, history: list[dict] | None = None) -> tuple[str, list[str]]:
     """Returns (markdown answer, steps taken)."""
     q = question.strip()
     steps: list[str] = []
     named, notes = find_companies(q)
-    if named:
+    short_follow_up = len(re.findall(r"\w+", q)) <= 6 and not MARKET_RE.search(q)
+    if history and (REFERS_BACK_RE.search(q) or (not named and short_follow_up)):
+        earlier = _conversation_companies(history)
+        continuing = False
+        if earlier and not named:
+            named = earlier[:6] if len(earlier) > 1 and COMPARATIVE_RE.search(q) else earlier[:1]
+            steps.append("Continuing with " + ", ".join(named) + " from the conversation")
+            continuing = True
+        elif earlier and COMPARE_RE.search(q) and earlier[0] not in named:
+            named = [earlier[0]] + named           # "compare it with Infosys"
+    else:
+        continuing = False
+    if named and not continuing:
         steps.append("Recognised " + ", ".join(named))
     syms = named or ([symbol] if symbol else [])
     lead = ("\n".join(f"> {n}" for n in notes) + "\n\n") if notes else ""
@@ -727,20 +936,26 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str
             txt = call("compare_companies", symbols=syms[:6])
         except ToolError as exc:
             return lead + f"I could not compare these companies: {exc}", steps
-        return lead + ("**Comparison** (latest fiscal year; day change is today's; rule-based summary - not a recommendation)\n\n"
+        direct = _compare_direct(tb, q)
+        return lead + direct + ("**Comparison** (latest fiscal year; day change is today's; rule-based summary - not a recommendation)\n\n"
                 + txt.split("\n", 1)[1] + "\n\n" + _compare_reading(tb, syms[:6])
                 + f"\n\nSource: [{tb.sources[-1]['ID']}] {tb.sources[-1]['Source']}. Open **Compare** for charts and more metrics."), steps
     # screens (need a list-like question: "top IT companies by ROE", "debt-free stocks", "highest dividend yield")
     ind_hit = next((iid for iid, pat in INDUSTRY_WORDS.items() if re.search(pat, q, re.I)), None)
     listy = re.search(r"\b(compan|stocks?\b|shares\b|banks\b|firms|names|dividend|gainers?|losers?)", q, re.I) or ind_hit
-    if not syms and SCREEN_RE.search(q) and listy:
+    thresholds = parse_screen_filters(q) if not syms else []
+    if not syms and ((SCREEN_RE.search(q) and listy) or thresholds):
         sort_by, asc, filt = "market_cap", False, []
-        for pat, key, a, f in SCREEN_WORDS:
-            if re.search(pat, q, re.I):
-                sort_by, asc = key, a
-                if f:
-                    filt.append(f)
-                break
+        if thresholds:                       # sort by the first condition, in the direction the user asked for
+            filt = thresholds
+            sort_by, asc = thresholds[0]["metric"], thresholds[0]["op"] in ("<", "<=")
+        else:
+            for pat, key, a, f in SCREEN_WORDS:
+                if re.search(pat, q, re.I):
+                    sort_by, asc = key, a
+                    if f:
+                        filt.append(f)
+                    break
         ind = ind_hit
         m = re.search(r"\btop (\d{1,2})\b", q, re.I)
         txt = call("screen_companies", filters=filt, industry=ind, sort_by=sort_by, ascending=asc, limit=int(m.group(1)) if m else 10)
@@ -758,6 +973,19 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str
             tb.ensure_tracked(sym)
         except ToolError as exc:
             return f"I could not load data for {sym}: {exc}", steps
+        if NEWS_RE.search(q) and set(intents) <= {"news", "overview", "concept"}:   # only news was asked for
+            try:
+                txt = call("latest_news", symbol=sym, limit=8)
+            except ToolError as exc:
+                return lead + f"I could not read news for {sym}: {exc}", steps
+            name = (repo.get_company(sym) or {}).get("name", sym)
+            items = txt.split("\n")[1:]
+            if not items:
+                return lead + (f"**Answer**\nNo recent exchange filings or verified headlines for {name} are stored in "
+                               "EquityPilot. Check the company's announcements on NSE/BSE."), steps
+            return lead + (f"**Answer**\nLatest exchange filings and headlines for **{name}** (titles exactly as published; "
+                           "exchange filings are official, media reports are secondary):\n\n" + "\n".join(f"- {x}" for x in items)
+                           + "\n\nOpen each link for the full text - EquityPilot does not summarise articles it has not retrieved."), steps
         steps.append(tb.describe("company_research", {"symbol": sym}))
         ctx = build_context(sym, q)
         if ctx is None:
@@ -768,7 +996,11 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str
         if "overview" in intents or "valuation" in intents:
             snap = _snapshot_md(tb, sym)
             if snap:
-                body = snap + "\n\n" + body
+                if body.startswith("**Answer**") and "\n\n**" in body:      # direct answer first, then the table
+                    head, rest = body.split("\n\n**", 1)
+                    body = head + "\n\n" + snap + "\n\n**" + rest
+                else:
+                    body = snap + "\n\n" + body
         body = lead + body
         extra = ""
         if PERF_RE.search(q):
@@ -776,13 +1008,17 @@ def _offline_answer(question: str, symbol: str | None, tb: ToolBox) -> tuple[str
                 extra = "\n\n**Price performance**\n" + "\n".join(call("price_performance", symbol=sym).split("\n")[1:])
             except ToolError as exc:
                 extra = f"\n\nPrice history unavailable: {exc}"
-        if NEWS_RE.search(q) and "news" not in body.lower():
+        if NEWS_RE.search(q) and "Recent headlines" not in body:
             try:
                 extra += "\n\n**Recent news**\n" + "\n".join(f"- {x}" for x in call("latest_news", symbol=sym, limit=6).split("\n")[1:])
             except ToolError:
                 pass
         tb.ctx_sources = ctx.source_list().to_dict("records")   # type: ignore[attr-defined]
         return body + extra, steps
+    # documents asked for but none selected
+    if "document" in intents and not tb.doc_ids:
+        return ("**No document is selected.** Upload the report on the **Documents** page, then tick it in the document picker "
+                "next to the question box. I can then summarise it or answer questions with quotes and page numbers."), steps
     # concept or nothing matched
     a = offline.answer(None, q)
     if a.startswith("Select a company first"):
@@ -806,10 +1042,45 @@ def _market_md(txt: str) -> str:
         if m:
             up = m.group(2).startswith("+")
             summary = f"NIFTY 50 is **{'up' if up else 'down'} {m.group(2).lstrip('+-')}** at {m.group(1)} [{sid}]. "
-    return ("**Summary**\n" + summary + head + "\n\n**Indices**\n" + "\n".join(idx[:8]) + "\n\n**Breadth, movers and sectors**\n"
+    indices = "\n".join(idx[:8]) or ("Index values are not available right now (the market-data provider could not be "
+                                      "reached, or EquityPilot is running offline).")
+    return ("**Summary**\n" + summary + head + "\n\n**Indices**\n" + indices + "\n\n**Breadth, movers and sectors**\n"
             + "\n".join(f"- {x}" for x in rest) +
             f"\n\n**Limitations**\n- Values are delayed (not real-time) unless marked LIVE. Breadth and movers cover the companies "
             f"EquityPilot tracks, not the whole exchange. [{sid}]")
+
+
+_LOWER_IS_BETTER = {"pe", "pb", "ev_ebitda", "debt_to_equity"}
+
+
+def _compare_direct(tb: ToolBox, q: str) -> str:
+    """'Which has better margins?' -> the leader on the metric asked about, with the values (from the table above)."""
+    df = getattr(tb, "last_compare", None)
+    if df is None or df.empty:
+        return ""
+    key = offline.asked_metric(q)
+    keys = [key] if key in getattr(tb, "COMPARE_KEYS", []) else (["net_margin", "ebitda_margin"] if re.search(r"\bmargins?\b", q, re.I) else [])
+    sid = tb.sources[-1]["ID"] if tb.sources else "T1"
+    lines = []
+    for k in keys:
+        col = pd.to_numeric(df.get(k), errors="coerce").dropna() if k in df.columns else pd.Series(dtype=float)
+        if k in ("debt_to_equity", "ev_ebitda") and "is_financial" in df.columns:
+            col = col[~df.loc[col.index, "is_financial"].astype(bool)]
+        if k == "pe":
+            col = col[col > 0]
+        if len(col) < 2:
+            missing = [s_.rsplit(".", 1)[0] for s_ in df.index if s_ not in col.index]
+            if len(col) == 1 and missing:
+                only = col.index[0]
+                lines.append(f"{_label(k)} is available only for {only.rsplit('.', 1)[0]} ({fmt_metric(k, col.iloc[0])}); it cannot be "
+                             f"calculated for {', '.join(missing)} from the stored data (for example, statements in another "
+                             f"currency or a missing input) [{sid}].")
+            continue
+        best = col.idxmin() if k in _LOWER_IS_BETTER else col.idxmax()
+        word = "Lower" if k in _LOWER_IS_BETTER else "Higher"
+        lines.append(f"{word} {_label(k)}: **{df.at[best, 'name']}** - " +
+                     ", ".join(f"{s_.rsplit('.', 1)[0]} {fmt_metric(k, v)}" for s_, v in col.items()) + f" [{sid}].")
+    return ("**Answer**\n" + "\n".join(lines) + "\n\n") if lines else ""
 
 
 def _compare_reading(tb: ToolBox, syms: list[str]) -> str:
@@ -838,13 +1109,46 @@ def _compare_reading(tb: ToolBox, syms: list[str]) -> str:
 HELP_PREFIX = "I can help with:"
 
 
-def run_offline(question: str, symbol: str | None, tb: ToolBox) -> Iterator[dict]:
-    answer, steps = _offline_answer(question, symbol, tb)
-    if tb.doc_ids:
+SUMMARY_RE = re.compile(r"\b(summar(y|ise|ize)|key (points|takeaways|highlights)|highlights|main points|overview of (the|this) (report|document))\b", re.I)
+
+
+def _document_summary(doc_ids: list[int], tb: "ToolBox") -> str:
+    """Extractive summary of the selected documents: the sentences with the most financial content, quoted verbatim
+    with page numbers. Scanned PDFs (no text layer) are reported, never summarised from nothing."""
+    from equitypilot.data import uploads as U
+    parts = []
+    for d in doc_ids:
+        doc = U.get_document(d)
+        if not doc:
+            continue
+        pages = U.text_to_pages(doc.get("text") or "")
+        if sum(len(pg["text"].strip()) for pg in pages) < 200:
+            parts.append(f"**{doc['filename']}** has no readable text layer (probably a scanned PDF). OCR is not available in "
+                         "EquityPilot, so it cannot be summarised; open the original or upload a text-based PDF.")
+            continue
+        sents = offline.summarise_document(pages, n=10)
+        if not sents:
+            parts.append(f"**{doc['filename']}**: no sentences with financial content were found to quote.")
+            continue
+        sid = tb.src(f"{doc['filename']} - summary passages", f"Uploaded document {doc['filename']}", "official_upload")
+        parts.append(f"**Key passages from {doc['filename']}** (quoted verbatim; most financial content first) [{sid}]\n"
+                     + "\n".join(f"- \"{t}\" — *p. {pg}*" for pg, t in sents))
+    return "\n\n".join(parts)
+
+
+def run_offline(question: str, symbol: str | None, tb: ToolBox, history: list[dict] | None = None) -> Iterator[dict]:
+    answer, steps = _offline_answer(question, symbol, tb, history)
+    if tb.doc_ids and SUMMARY_RE.search(question):
+        steps.append("Summarising your documents")
+        summary = _document_summary(tb.doc_ids, tb)
+        if answer.startswith(HELP_PREFIX) or answer.startswith("**No document is selected"):
+            answer = ""
+        answer = (summary + ("\n\n" + answer if answer else "")) if summary else answer
+    elif tb.doc_ids:
         steps.append("Searching your documents")
         passages = rag.retrieve(question, tb.doc_ids, k=6)
         sents = rag.best_sentences(passages, question) if passages else []
-        if answer.startswith(HELP_PREFIX):
+        if answer.startswith(HELP_PREFIX) or answer.startswith("**No document is selected"):
             answer = ""
         if sents:
             ids: dict[tuple, str] = {}
@@ -866,9 +1170,9 @@ def run_offline(question: str, symbol: str | None, tb: ToolBox) -> Iterator[dict
     yield {"type": "final", "text": answer, "meta": {"engine": "offline analyst (rule-based)", "grounding": None, "steps": len(steps)}}
 
 
-def gather_for_local_model(question: str, symbol: str | None, tb: ToolBox) -> str:
+def gather_for_local_model(question: str, symbol: str | None, tb: ToolBox, history: list[dict] | None = None) -> str:
     """Context for a local model (Ollama): the data the offline router would use, as cited blocks."""
-    _offline_answer(question, symbol, tb)
+    _offline_answer(question, symbol, tb, history)
     named = mentioned_companies(question) or ([symbol] if symbol else [])
     if named and not any(s["Content"].startswith(named[0]) for s in tb.sources):
         try:
@@ -889,28 +1193,28 @@ def stream_answer(question: str, history: list[dict], symbol: str | None, doc_id
         if engine == "anthropic":
             if not api_key or not settings.get("consent"):
                 raise P.ProviderError("Claude API is not configured (key + billing acknowledgement in Settings).")
-            for ev in run_claude(question, history, symbol, tb, settings.get("model", "claude-opus-5-5"), api_key, doc_names):
+            for ev in run_claude(question, history, symbol, tb, settings.get("model", "claude-opus-5-5"), api_key, doc_names,
+                                 effort=settings.get("effort") or "medium"):
                 if ev["type"] == "final":
                     final = ev
                 else:
                     yield _sse(ev)
         elif engine == "ollama":
             yield _sse({"type": "status", "text": "Gathering data for the local model"})
-            ctx_text = gather_for_local_model(question, symbol, tb)
+            ctx_text = gather_for_local_model(question, symbol, tb, history)
             res = P.ask_ollama(ctx_text, history, question,
                                settings.get("ollama_model", "llama3.1:8b"), settings.get("ollama_host", "http://localhost:11434"))
-            total, untraced = grounding_check(res.text, ctx_text)
             final = {"type": "final", "text": res.text, "meta": {"engine": res.model, "tokens": [res.input_tokens, res.output_tokens],
-                                                                  "grounding": {"figures": total, "untraced": untraced[:10]}}}
+                                                                  "grounding": grounding_report(res.text, ctx_text, [x["ID"] for x in tb.sources])}}
         else:
-            for ev in run_offline(question, symbol, tb):
+            for ev in run_offline(question, symbol, tb, history):
                 if ev["type"] == "final":
                     final = ev
                 else:
                     yield _sse(ev)
     except P.ProviderError as exc:
         tb = ToolBox(uid, doc_ids)
-        for ev in run_offline(question, symbol, tb):
+        for ev in run_offline(question, symbol, tb, history):
             if ev["type"] == "final":
                 final = ev
                 final["meta"]["engine"] = "offline analyst (fallback)"

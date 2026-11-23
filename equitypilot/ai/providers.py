@@ -27,10 +27,14 @@ Grounding rules (mandatory):
 
 # Indicative list prices (USD per million tokens) - verify on Anthropic's pricing page before enabling.
 ANTHROPIC_MODELS = {
-    "claude-opus-5-5": {"label": "Claude Opus 5.5 (most capable)", "in": 4.00, "out": 20.00},
-    "claude-sonnet-5-5": {"label": "Claude Sonnet 5.5 (balanced)", "in": 2.00, "out": 10.00},
-    "claude-haiku-5-5": {"label": "Claude Haiku 5.5 (lowest cost)", "in": 0.10, "out": 0.50},
+    "claude-opus-5-5": {"label": "Claude Opus 5.5 (most capable)", "in": 4.00, "out": 20.00, "cache_read": 0.20},
+    "claude-sonnet-5-5": {"label": "Claude Sonnet 5.5 (balanced)", "in": 2.00, "out": 10.00, "cache_read": 0.10},
+    "claude-haiku-5-5": {"label": "Claude Haiku 5.5 (lowest cost)", "in": 0.10, "out": 0.50, "cache_read": 0.01},
 }
+# Models a refusal fallback may run on (priced at their own rates; cache reads at 10% of input where not published).
+FALLBACK_PRICES = {"claude-opus-4-8": {"in": 5.00, "out": 25.00, "cache_read": 0.50},
+                   "claude-opus-5": {"in": 5.00, "out": 25.00, "cache_read": 0.50}}
+CACHE_WRITE_FACTOR = 1.25     # 5-minute prompt-cache writes cost 1.25x the input price
 PRICING_NOTE = ("Indicative Anthropic API list prices (USD per million tokens) as of Nov 2026; check "
                 "https://www.anthropic.com/pricing before enabling.")
 
@@ -59,6 +63,19 @@ def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int = 1200) 
     return input_tokens / 1e6 * p["in"] + output_tokens / 1e6 * p["out"]
 
 
+def cost_of(parts: list[tuple]) -> float | None:
+    """Estimated USD for API attempts given as (model, input, output, cache read, cache write) tokens."""
+    total, known = 0.0, False
+    for model, inp, out, c_read, c_write in parts:
+        p = ANTHROPIC_MODELS.get(model) or FALLBACK_PRICES.get(model)
+        if not p:
+            continue
+        known = True
+        total += (inp * p["in"] + out * p["out"] + c_read * p.get("cache_read", p["in"] * 0.1)
+                  + c_write * p["in"] * CACHE_WRITE_FACTOR) / 1e6
+    return total if known else None
+
+
 def find_api_key(session_key: str | None = None) -> str | None:
     if session_key:
         return session_key
@@ -69,6 +86,29 @@ def find_api_key(session_key: str | None = None) -> str | None:
     except Exception:  # no secrets file - fine
         pass
     return os.environ.get("ANTHROPIC_API_KEY")
+
+
+def explain_anthropic_error(exc: Exception) -> str:
+    """A plain explanation of an Anthropic API error (shown to the user; the free offline engine answers instead)."""
+    import anthropic
+    if isinstance(exc, anthropic.AuthenticationError):
+        return "The Anthropic API key was rejected. Check the key in Settings."
+    if isinstance(exc, anthropic.PermissionDeniedError):
+        return "This API key does not have access to the selected model."
+    if isinstance(exc, anthropic.NotFoundError):
+        return "The selected Claude model was not found for this account."
+    if isinstance(exc, anthropic.RateLimitError):
+        return "The Anthropic rate limit was reached - wait a minute and try again."
+    if isinstance(exc, anthropic.BadRequestError):
+        msg = getattr(exc, "message", "") or str(exc)
+        if "credit balance" in msg.lower():
+            return "Your Anthropic API credit balance is too low. Add credit at console.anthropic.com (API billing is separate from Claude Pro/Max plans)."
+        return f"The Anthropic API rejected the request: {msg[:200]}"
+    if isinstance(exc, anthropic.APIStatusError):
+        return f"The Anthropic API is temporarily unavailable (HTTP {exc.status_code}). Try again shortly."
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "Could not reach the Anthropic API (network problem)."
+    return f"The Anthropic API returned an error ({type(exc).__name__})."
 
 
 def ask_anthropic(context_text: str, history: list[dict], question: str, model: str, api_key: str,
